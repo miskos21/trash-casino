@@ -4,6 +4,7 @@ import { useAvatarStore } from './stores/avatarStore';
 import { useGameConnection } from './services/useGameConnection';
 import { RoomLobby } from './components/RoomLobby';
 import { MatchHud } from './components/MatchHud';
+import { BlackjackHud } from './components/BlackjackHud';
 import { avatars, type AvatarOption } from './avatars';
 import { GameIcon } from './components/GameIcon';
 import { MatchClockProvider } from './game/MatchClock';
@@ -34,8 +35,8 @@ export function App() {
     : status.health === 'checking' || status.socket === 'checking' ? 'checking' : 'offline';
 
   useEffect(() => {
-    if (status.game?.publicState.matchId) setCamera((previous) => ({ view: 'table', revision: previous.revision + 1 }));
-  }, [status.game?.publicState.matchId]);
+    if (status.game?.publicState.matchId || status.blackjack?.matchId) setCamera((previous) => ({ view: 'table', revision: previous.revision + 1 }));
+  }, [status.game?.publicState.matchId, status.blackjack?.matchId]);
 
   useEffect(() => {
     const dialog = menu.current;
@@ -71,9 +72,9 @@ export function App() {
     } catch { setNotice('Fullscreen is unavailable. Use your browser’s fullscreen control.'); }
   }
 
-  return <MatchClockProvider active={status.game?.publicState.phase === 'IN_PROGRESS'}><main className="game-shell" aria-label="Raccoon Royale game">
+  return <MatchClockProvider active={status.game?.publicState.phase === 'IN_PROGRESS' || status.blackjack?.phase === 'IN_PROGRESS'}><main className="game-shell" aria-label="Raccoon Royale game">
     <div className="game-scene" aria-label="3D casino table">
-      <SceneBoundary><TableScene avatar={myAvatar} room={status.room} game={status.game} reveal={status.reveal} cameraView={camera.view} cameraRevision={camera.revision} /></SceneBoundary>
+      <SceneBoundary><TableScene avatar={myAvatar} room={status.room} game={status.game} blackjack={status.blackjack} reveal={status.reveal} cameraView={camera.view} cameraRevision={camera.revision} /></SceneBoundary>
     </div>
     <div className="game-vignette" aria-hidden="true" />
 
@@ -90,7 +91,8 @@ export function App() {
       </div>
     </header>
 
-    <MatchHud connection={status} onMenu={() => setMenuOpen(true)} />
+    {status.room?.game === 'BLACKJACK' ? <BlackjackHud connection={status} onMenu={() => setMenuOpen(true)} />
+      : <MatchHud connection={status} onMenu={() => setMenuOpen(true)} />}
     <div className="camera-hint" aria-hidden="true"><span className="desktop-hint">Drag to look · Scroll to zoom</span><span className="touch-hint">Drag to look · Pinch to zoom</span></div>
 
     <nav className="game-toolbar" aria-label="Character and camera controls">
@@ -135,7 +137,7 @@ export function App() {
             <button className="retry" onClick={status.retry}>Check connection again</button>
           </div>
         </details>
-        <p className="menu-fine-print">Testnet only. No real-money purchases or cashouts. Server-controlled dice and outcomes; no provably fair randomness claim.</p>
+        <p className="menu-fine-print">Testnet only. No real-money purchases or cashouts. Server-controlled dice, cards, and outcomes; no provably fair randomness claim.</p>
       </div>
     </dialog>
   </main></MatchClockProvider>;

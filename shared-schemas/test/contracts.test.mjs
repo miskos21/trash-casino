@@ -61,3 +61,22 @@ test('public activity rejects private dice and guest recovery credentials', () =
   assert.equal(validate('PublicGameEvent', { ...event, ownDice: [6, 6, 6] }), false);
   assert.equal(validate('PublicGameEvent', { ...event, resumeToken: 'a'.repeat(43) }), false);
 });
+
+test('blackjack moves carry no cards and the dealer hole card has no public field', () => {
+  const move = { matchId: 'm', expectedRevision: 0 };
+  assert.ok(validate('ClientMessage', envelope('BLACKJACK_HIT', move)));
+  assert.ok(validate('ClientMessage', envelope('BLACKJACK_STAND', move)));
+  assert.equal(validate('ClientMessage', envelope('BLACKJACK_HIT', { ...move, card: { rank: 'A', suit: 'S' } })), false);
+  assert.equal(validate('ClientMessage', envelope('BLACKJACK_STATE', {})), false);
+  assert.ok(validate('ClientMessage', envelope('ROOM_CREATE', { displayName: 'P', avatar: 'FROG', game: 'BLACKJACK', agents: 0 })));
+  assert.equal(validate('ClientMessage', envelope('ROOM_CREATE', { displayName: 'P', avatar: 'FROG', agents: 3 })), false);
+  assert.equal(validate('ClientMessage', envelope('ROOM_CREATE', { displayName: 'P', avatar: 'FROG', game: 'POKER' })), false);
+  const hand = { playerId: 'p1', displayName: 'P', avatar: 'CAT', npc: false, cards: [{ rank: 'A', suit: 'S' }, { rank: 'K', suit: 'H' }],
+    total: 21, status: 'BLACKJACK', outcome: null };
+  const dealer = { cards: [{ rank: '9', suit: 'C' }], hiddenCards: 1, total: 9 };
+  const state = { matchId: 'm', phase: 'IN_PROGRESS', players: [hand], dealer, currentPlayerId: null, revision: 0, deadlineEpochMillis: 0 };
+  assert.ok(validate('ServerMessage', envelope('BLACKJACK_STATE', state)));
+  assert.equal(validate('BlackjackDealer', { ...dealer, holeCard: { rank: 'K', suit: 'S' } }), false);
+  assert.equal(validate('Card', { rank: '1', suit: 'S' }), false);
+  assert.equal(validate('BlackjackHand', { ...hand, cards: [{ rank: 'A', suit: 'S' }] }), false);
+});

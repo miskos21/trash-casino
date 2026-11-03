@@ -20,10 +20,14 @@ Implemented locally:
 - Shared JSON schemas, generated TypeScript declarations, validation tests.
 - Isolated authoritative Liar's Dice engine with private views, increasing bids,
   bluff resolution, elimination, full match completion, deterministic fallback.
-- Guest rooms for 1–3 humans plus one rule-based NPC (2–4 total), room codes,
+- Guest rooms for up to four seats: humans plus 0–2 rule-based agents (Don Raccoone,
+  Foxy) chosen when the room is created, room codes,
   ready states, host start, timed turns, dice reveal, winner, and rematch.
 - Recipient-specific game state, browser controls and dice, 3D seats for each
   participant, reload recovery using a server-issued guest capability.
+- Free-play Blackjack, the web client's default room game (P2 minigame): every human
+  and agent plays a hand against a seatless house dealer. Same rooms, timers, reconnects.
+  Liar's Dice stays available and remains the P0 game for the chain features.
 
 Wallet signing, LLM decisions/chat, negotiations, starter grants, contracts,
 buy-in, and settlement are not
@@ -69,10 +73,12 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
 
 ### Play a match
 
-1. Open **Menu**, select an animal, enter a name, and click **Create room**.
+1. Open **Menu**, select an animal, enter a name, choose **Liar’s Dice** (Blackjack
+   is the default), pick the number of agents, and click **Create room**. Liar's Dice
+   needs at least two participants, so with 0 agents wait for a friend.
 2. For multiplayer, open the app in a fresh tab or another browser, enter the
-   six-character code, and click **Join room**. Up to three human seats are allowed;
-   Don Raccoone occupies the remaining seat. You can also play alone against Don.
+   six-character code, and click **Join room**. Humans and agents share four seats.
+   You can also play alone against one or two agents.
 3. Each human clicks **Ready**. The creator clicks **Start match**.
 4. Your private dice appear below the scene. On your turn raise the quantity, or
    keep it and raise the face, using **Make claim**. Once a claim exists, **Call bluff**
@@ -83,6 +89,25 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
 6. Open **Menu** to ready up for a rematch or leave the room. Reloading the same
    tab restores that guest seat and its private view. Use a fresh tab, rather than
    duplicating an existing game tab, to create another player.
+
+### Play Blackjack
+
+1. Open **Menu**. **Blackjack** is selected by default; choose **0**, **1** (Don), or
+   **2** (Don + Foxy) agents, then **Create room**. Friends join with the code as
+   above; humans plus agents fill at most four seats. The house dealer has no seat.
+2. **Ready**, then **Start match**. Everyone gets two face-up cards; the dealer
+   shows one card and keeps one face down. The server never sends that hidden card
+   to any browser until the dealer reveals it.
+3. On your turn click **Hit** for a card or **Stand** to keep your total. Over 21
+   busts. Reaching 21 ends your turn. Turns expire after 30 seconds and stand.
+4. Agents play their own hands after the humans: they hit below 17 and otherwise
+   stand, using only their own cards. After the last player, the dealer reveals and draws to 17 or more (stands on
+   soft 17). Each hand shows Win, Lose, Push, or Blackjack. A dealer natural ends
+   the hand immediately. Use **Back to lobby**, **Ready**, **Play again** to deal again.
+
+Two standard decks are shuffled with `SecureRandom` for every hand. Blackjack is
+also free play: no buy-in, no payout, and no 3:2 token reward. No double, split,
+insurance, or surrender in this slice.
 
 **What is at stake?** This is a free match: no buy-in, no tokens at risk, no pot,
 and no token reward or persistent points for winning. Each resolved bluff costs
@@ -136,6 +161,28 @@ restart Vite. Set `WEB_ORIGIN` in the Java process if the browser origin changes
 the default allowlist includes `http://localhost:5173` and `http://127.0.0.1:5173`
 (comma-separated in `WEB_ORIGIN`). A root `.env` is consumed by
 Compose, not automatically by Java or Vite. Keep server secrets out of `VITE_*`.
+
+## Play with a remote friend (informal test)
+
+A Cloudflare quick tunnel exposes the local Vite server through a random public
+`https://*.trycloudflare.com` URL. No Cloudflare account is needed. Anyone with
+the URL reaches your dev server while the tunnel runs, so share it only with testers.
+
+1. Start the backend and Vite as above, then install `cloudflared`
+   (`sudo pacman -S cloudflared` on Arch, or the official release binary).
+2. Run `cloudflared tunnel --url http://localhost:5173` and copy the printed URL.
+   Vite already accepts `.trycloudflare.com` hosts (`web-client/vite.config.ts`).
+3. Restart Java with that origin allowed, otherwise the WebSocket handshake is rejected:
+
+   ```bash
+   cd backend-java
+   WEB_ORIGIN=http://localhost:5173,https://<random-name>.trycloudflare.com ./mvnw spring-boot:run
+   ```
+
+4. Both players open the tunnel URL. One creates a room and shares the code.
+
+Each tunnel start gets a new URL, which needs a new `WEB_ORIGIN` restart. Stopping
+`cloudflared` ends public access. This is not a hosted demo deployment.
 
 ## Optional PostgreSQL stack
 

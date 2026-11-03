@@ -7,6 +7,8 @@ export default defineConfig(({ mode }) => {
   return {
   plugins: [react(), tailwindcss()],
   server: {
+    // Cloudflare quick tunnels (`cloudflared tunnel --url http://localhost:5173`) for informal friend tests.
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/api': { target },
       '/ws': { target, ws: true },

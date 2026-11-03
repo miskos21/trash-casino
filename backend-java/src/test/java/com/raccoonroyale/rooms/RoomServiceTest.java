@@ -127,4 +127,79 @@ class RoomServiceTest {
         host.ready(); host.start();
         assertEquals("IN_PROGRESS", host.last("ROOM_STATE").path("phase").asText());
     }
+    @Test void blackjackRoomDealsHumansHidesHoleCardAndValidatesTurns() throws Exception {
+        var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "CAT", "game", "BLACKJACK", "agents", 0));
+        var guest = new Guest(); guest.join(host);
+        assertEquals("BLACKJACK", guest.last("ROOM_STATE").path("game").asText());
+        host.ready(); guest.ready(); host.start();
+        String matchId = host.last("BLACKJACK_STATE").path("matchId").asText();
+        for(var player : List.of(host, guest)) {
+            var state = player.last("BLACKJACK_STATE");
+            assertEquals(2, state.path("players").size()); // No agents; the house dealer has no seat or hand.
+            assertFalse(state.path("dealer").has("playerId"));
+            if(state.path("phase").asText().equals("IN_PROGRESS")) {
+                assertEquals(1, state.path("dealer").path("cards").size());
+                assertEquals(1, state.path("dealer").path("hiddenCards").asInt());
+            }
+            assertTrue(player.received.stream().noneMatch(n -> n.path("type").asText().equals("GAME_STATE")));
+        }
+        host.send("PLAYER_BID", Map.of("matchId", matchId, "expectedRevision", 0, "bid", Map.of("quantity", 1, "face", 1)));
+        assertEquals("ILLEGAL_ACTION", host.last("ERROR").path("code").asText());
+        for(int turn=0; turn<4 && host.last("BLACKJACK_STATE").path("phase").asText().equals("IN_PROGRESS"); turn++) {
+            var state = host.last("BLACKJACK_STATE");
+            long revision = state.path("revision").asLong();
+            var mover = state.path("currentPlayerId").asText().equals(host.id()) ? host : guest;
+            var other = mover == host ? guest : host;
+            other.send("BLACKJACK_STAND", Map.of("matchId", matchId, "expectedRevision", revision));
+            assertEquals("ILLEGAL_ACTION", other.last("ERROR").path("code").asText());
+            mover.send("BLACKJACK_HIT", Map.of("matchId", matchId, "expectedRevision", revision + 1));
+            assertEquals("STALE_STATE", mover.last("ERROR").path("code").asText());
+            assertEquals(revision, host.last("BLACKJACK_STATE").path("revision").asLong());
+            mover.send("BLACKJACK_STAND", Map.of("matchId", matchId, "expectedRevision", revision));
+        }
+        var done = guest.last("BLACKJACK_STATE");
+        assertEquals("FINISHED", done.path("phase").asText());
+        assertEquals("FINISHED", guest.last("ROOM_STATE").path("phase").asText());
+        assertEquals(0, done.path("dealer").path("hiddenCards").asInt());
+        assertTrue(done.path("dealer").path("cards").size() >= 2);
+        for(var hand : done.path("players")) assertFalse(hand.path("outcome").isNull());
+        host.ready(); guest.ready(); host.start();
+        assertNotEquals(matchId, host.last("BLACKJACK_STATE").path("matchId").asText());
+    }
+    @Test void blackjackTimeoutStandsAndAgentsPlayTheirOwnHands() throws Exception {
+        var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "FROG", "game", "BLACKJACK", "agents", 2));
+        assertEquals(List.of("Host", "Don Raccoone", "Foxy"), java.util.stream.StreamSupport.stream(
+            host.last("ROOM_STATE").path("participants").spliterator(), false).map(p -> p.path("displayName").asText()).toList());
+        host.ready(); host.start();
+        for(int tick=0; tick<40 && host.last("BLACKJACK_STATE").path("phase").asText().equals("IN_PROGRESS"); tick++) rooms.tick();
+        var state = host.last("BLACKJACK_STATE");
+        assertEquals("FINISHED", state.path("phase").asText());
+        var players = state.path("players");
+        assertEquals(3, players.size());
+        var status = players.get(0).path("status").asText();
+        assertTrue(status.equals("STOOD") || status.equals("BLACKJACK"), status); // The human timed out and stood.
+        for(int i = 1; i < 3; i++) {
+            var agent = players.get(i);
+            assertTrue(agent.path("npc").asBoolean());
+            // Rule-based agents stop at 17 or more unless the dealer's natural ended the hand first.
+            assertTrue(agent.path("total").asInt() >= 17 || state.path("dealer").path("cards").size() == 2
+                && state.path("dealer").path("total").asInt() == 21, agent.toString());
+        }
+    }
+    @Test void agentCountControlsSeatsCapacityAndDiceMinimum() throws Exception {
+        var solo = new Guest(); solo.send("ROOM_CREATE", Map.of("displayName", "Solo", "avatar", "CAT", "agents", 0));
+        assertEquals(1, solo.last("ROOM_STATE").path("participants").size());
+        solo.ready(); solo.start();
+        assertEquals("NOT_READY", solo.last("ERROR").path("code").asText()); // Liar's Dice needs two participants.
+        var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "CAT", "agents", 2));
+        var guest = new Guest(); guest.join(host); var third = new Guest(); third.join(host);
+        assertEquals("ROOM_FULL", third.last("ERROR").path("code").asText());
+        var seats = host.last("ROOM_STATE").path("participants");
+        assertEquals(List.of(false, false, true, true), java.util.stream.StreamSupport.stream(seats.spliterator(), false)
+            .map(p -> p.path("npc").asBoolean()).toList()); // Humans sit before agents.
+        host.ready(); guest.ready(); host.start();
+        assertEquals(4, host.last("GAME_STATE").path("publicState").path("participants").size());
+        assertThrows(IllegalArgumentException.class, () -> protocol.parseClient(mapper.writeValueAsString(Map.of("protocolVersion", 1,
+            "type", "ROOM_CREATE", "requestId", "x", "payload", Map.of("displayName", "A", "avatar", "CAT", "agents", 3)))));
+    }
 }

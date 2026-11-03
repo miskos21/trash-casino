@@ -31,11 +31,14 @@ duplicates are suppressed within a bounded socket cache. Gameplay commands
 also require `expectedRevision` to reject delayed/replayed turns.
 
 Implemented client commands: `ROOM_CREATE`, `ROOM_JOIN`, `ROOM_READY`, `ROOM_START`,
-`PLAYER_BID`, `CALL_BLUFF`, `PLAYER_RECONNECT`, `ROOM_LEAVE`. `PLAYER_CHAT` remains
+`PLAYER_BID`, `CALL_BLUFF`, `BLACKJACK_HIT`, `BLACKJACK_STAND`, `PLAYER_RECONNECT`,
+`ROOM_LEAVE`. `ROOM_CREATE.game` selects `LIARS_DICE` (default) or `BLACKJACK`. `PLAYER_CHAT` remains
 reserved and returns `NOT_IMPLEMENTED`.
 
 Implemented events: `ROOM_SESSION`, `ROOM_STATE`, `GAME_START`, `GAME_STATE`,
-`DICE_REVEAL`, `GAME_RESULT`. Turn identity and timing are carried by `GAME_STATE`.
+`DICE_REVEAL`, `GAME_RESULT`, `BLACKJACK_STATE`. Turn identity and timing are carried by
+`GAME_STATE` or `BLACKJACK_STATE`. `BLACKJACK_STATE` holds only face-up cards; the
+dealer's hole card is represented by `hiddenCards: 1` until the hand finishes.
 `TURN`, `NPC_CHAT`, `AI_ACTION`, and `PLAYER_DISCONNECT` remain reserved.
 `GAME_STATE` is recipient-specific (`ownDice` plus public state). Never broadcast
 one recipient's complete snapshot to a room. `AI_ACTION` carries only public

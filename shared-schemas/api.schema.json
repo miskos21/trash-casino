@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raccoon-royale.invalid/schemas/api.v1.json",
   "title": "ApiContract",
-  "description": "Version 1 free-play rooms and game contracts. No wallet or chain operations.",
+  "description": "Version 1 free-play rooms, Liar's Dice, and Blackjack contracts. No wallet or chain operations.",
   "oneOf": [
     {
       "$ref": "#/$defs/ClientMessage"
@@ -707,6 +707,16 @@
             },
             "avatar": {
               "$ref": "#/$defs/Avatar"
+            },
+            "game": {
+              "$ref": "#/$defs/GameType",
+              "description": "Defaults to LIARS_DICE for older clients. The web client selects BLACKJACK by default."
+            },
+            "agents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2,
+              "description": "Rule-based NPC seats: 1 adds Don Raccoone, 2 also adds Foxy. Defaults to 1."
             }
           },
           "required": [
@@ -1493,6 +1503,12 @@
         },
         {
           "$ref": "#/$defs/ROOM_START"
+        },
+        {
+          "$ref": "#/$defs/BLACKJACK_HIT"
+        },
+        {
+          "$ref": "#/$defs/BLACKJACK_STAND"
         }
       ]
     },
@@ -1536,6 +1552,9 @@
         },
         {
           "$ref": "#/$defs/ROOM_SESSION"
+        },
+        {
+          "$ref": "#/$defs/BLACKJACK_STATE"
         }
       ]
     },
@@ -1606,13 +1625,17 @@
           "items": {
             "$ref": "#/$defs/RoomSeat"
           },
-          "minItems": 2,
+          "minItems": 1,
           "maxItems": 4
+        },
+        "game": {
+          "$ref": "#/$defs/GameType"
         }
       },
       "required": [
         "roomId",
         "roomCode",
+        "game",
         "phase",
         "hostId",
         "youId",
@@ -1820,6 +1843,320 @@
         "loserId",
         "actualCount",
         "cause"
+      ]
+    },
+    "GameType": {
+      "type": "string",
+      "enum": [
+        "LIARS_DICE",
+        "BLACKJACK"
+      ]
+    },
+    "Card": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rank": {
+          "enum": [
+            "A",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "J",
+            "Q",
+            "K"
+          ]
+        },
+        "suit": {
+          "enum": [
+            "S",
+            "H",
+            "D",
+            "C"
+          ]
+        }
+      },
+      "required": [
+        "rank",
+        "suit"
+      ]
+    },
+    "BlackjackHand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "playerId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "avatar": {
+          "$ref": "#/$defs/Avatar"
+        },
+        "npc": {
+          "type": "boolean"
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Card"
+          },
+          "minItems": 2,
+          "maxItems": 12
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 31
+        },
+        "status": {
+          "enum": [
+            "PLAYING",
+            "STOOD",
+            "BUST",
+            "BLACKJACK"
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "WIN",
+                "LOSE",
+                "PUSH",
+                "BLACKJACK"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "playerId",
+        "displayName",
+        "avatar",
+        "npc",
+        "cards",
+        "total",
+        "status",
+        "outcome"
+      ]
+    },
+    "BlackjackDealer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Card"
+          },
+          "minItems": 1,
+          "maxItems": 12,
+          "description": "Face-up cards only. The hole card is never sent before the dealer reveals it."
+        },
+        "hiddenCards": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31,
+          "description": "Total of the face-up cards."
+        }
+      },
+      "required": [
+        "cards",
+        "hiddenCards",
+        "total"
+      ],
+      "description": "The house dealer. It has no seat and follows fixed rules."
+    },
+    "BlackjackState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matchId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "phase": {
+          "enum": [
+            "IN_PROGRESS",
+            "FINISHED"
+          ]
+        },
+        "players": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlackjackHand"
+          },
+          "minItems": 1,
+          "maxItems": 4
+        },
+        "dealer": {
+          "$ref": "#/$defs/BlackjackDealer"
+        },
+        "currentPlayerId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deadlineEpochMillis": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "matchId",
+        "phase",
+        "players",
+        "dealer",
+        "currentPlayerId",
+        "revision",
+        "deadlineEpochMillis"
+      ]
+    },
+    "BLACKJACK_HIT": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "BLACKJACK_HIT"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "matchId",
+            "expectedRevision"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "BLACKJACK_STAND": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "BLACKJACK_STAND"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "matchId",
+            "expectedRevision"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "BLACKJACK_STATE": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "BLACKJACK_STATE"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "$ref": "#/$defs/BlackjackState"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
       ]
     }
   }

@@ -8,6 +8,7 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'Capybara', exact: true }).click();
   await page.getByLabel('Player name', { exact: true }).fill('Host');
+  await page.getByRole('button', { name: 'Liar’s Dice', exact: true }).click(); // Blackjack is the default.
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
   const code = await page.getByLabel('Room code', { exact: true }).textContent();
   expect(code).toMatch(/^[A-Z0-9]{6}$/);

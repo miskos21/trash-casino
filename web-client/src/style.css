@@ -120,7 +120,7 @@ button:disabled { opacity: 0.45; }
 .playing-badge { position: absolute; top: -5px; right: 7px; padding: 2px 5px; background: #dabb7e; color: #22301e; font-size: 8px; border-radius: 3px; }
 .player-last-claim { display: flex; align-items: center; gap: 5px; font-size: 10px; margin-top: 6px; color: #dec792; }
 .match-actions { position: absolute; z-index: 11; bottom: 119px; left: 50%; transform: translateX(-50%); width: min(548px, calc(100vw - 28px)); padding: 15px 18px 11px; border: 1px solid #9da87b80; border-radius: 13px; background: #13231ef7; box-shadow: 0 12px 40px #07110d66; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }
-.action-turn-line, .bid-controls, .claim-explanation, .match-mode-footer, .match-actions > .room-error, .match-actions > .resume-button { grid-column: 1 / -1; }
+.action-turn-line, .bid-controls, .blackjack-controls, .claim-explanation, .match-mode-footer, .match-actions > .room-error, .match-actions > .resume-button { grid-column: 1 / -1; }
 .game-shell:has(.match-actions) .camera-hint { display: none; }
 .match-actions.is-your-turn { border: 2px solid #e4c17e; padding: 14px 17px 10px; box-shadow: 0 10px 40px #07110d88; }
 .action-turn-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid #b8b18a33; padding-bottom: 10px; }
@@ -147,6 +147,26 @@ button:disabled { opacity: 0.45; }
 .bid-controls input, .bid-controls select { min-height: 43px; font-size: 14px; }
 .bid-controls .resume-button, .bid-controls .secondary-button { min-height: 43px; font-size: 12px; padding: 9px 10px; }
 .claim-explanation { font-size: 10px; line-height: 1.5; color: #bdc9ae; margin: 9px 0 0; }
+.game-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0 4px; }
+.game-picker button { min-height: 38px; border: 1px solid #a1ab8333; border-radius: 7px; background: #15241d; color: #bdc5b1; font: inherit; font-size: 12px; cursor: pointer; }
+.game-picker button.selected { border-color: #e0bd76; background: #354132; color: #f5ddb1; }
+.playing-card { display: inline-flex; flex-direction: column; justify-content: space-between; width: 40px; height: 56px; padding: 4px 5px; border: 1px solid #fff4dc; border-radius: 5px; background: #f4ecd8; color: #1e2a22; box-shadow: 0 2px 0 #827957; font: 600 15px Georgia, serif; line-height: 1; flex-shrink: 0; }
+.playing-card > span:last-child { align-self: center; font-size: 22px; margin-bottom: 6px; }
+.playing-card.red-suit { color: #b2342b; }
+.playing-card.card-back { background: repeating-linear-gradient(45deg, #7c2f2a 0 5px, #9a4038 5px 8px); border-color: #d8b16a; }
+.playing-card.small-card { width: 22px; height: 30px; padding: 2px 3px; font-size: 9px; box-shadow: none; border-radius: 3px; }
+.playing-card.small-card > span:last-child { font-size: 12px; margin-bottom: 1px; }
+.card-row { display: flex; flex-direction: column; align-items: start; justify-content: center; gap: 7px; padding: 10px 0 14px; min-width: 0; }
+.card-row > small { color: #c2cdb2; font-size: 10px; line-height: 1.5; letter-spacing: 0.04em; }
+.card-row > div { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 56px; }
+.agent-picker button { display: grid; gap: 2px; padding: 6px 4px; }
+.agent-picker strong { font-size: 15px; }
+.agent-picker small { font-size: 9px; color: #aab79c; }
+.agent-picker { grid-template-columns: repeat(3, 1fr); margin-top: 0; }
+.dealer-mark { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 7px; background: #7c2f2a; color: #f4ecd8; font-size: 22px; flex-shrink: 0; }
+.seat-cards { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
+.blackjack-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.blackjack-controls button { min-height: 43px; font-size: 13px; }
 .match-mode-footer { display: flex; align-items: center; justify-content: space-between; gap: 7px; margin-top: 12px; border-top: 1px solid #adbc8b21; padding-top: 8px; }
 .match-mode-footer > span { font-size: 8px; letter-spacing: 0.03em; color: #a6b39a; }
 .rules-trigger { padding: 4px 0; border: 0; background: transparent; color: #e3c791; text-decoration: underline; text-underline-offset: 3px; font-size: 10px; white-space: nowrap; }
@@ -226,6 +246,11 @@ button:disabled { opacity: 0.45; }
   .claim-explanation { font-size: 9px; margin-top: 7px; }
   .match-mode-footer { margin-top: 8px; padding-top: 6px; }
   .match-mode-footer > span { font-size: 7px; }
+  .playing-card { width: 32px; height: 45px; font-size: 12px; }
+  .playing-card > span:last-child { font-size: 17px; margin-bottom: 3px; }
+  .card-row > div { min-height: 45px; gap: 4px; }
+  .seat-cards { display: none; }
+  .match-seats .dealer-card { display: none; } /* The action panel already shows the dealer hand. */
   .game-shell:has(.match-actions) .camera-hint { display: none; }
 }
 @media(max-height:650px) and (min-width:801px) {

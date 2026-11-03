@@ -1,7 +1,7 @@
 /* Generated from shared-schemas/api.schema.json. Run npm run schemas:generate. */
 
 /**
- * Version 1 free-play rooms and game contracts. No wallet or chain operations.
+ * Version 1 free-play rooms, Liar's Dice, and Blackjack contracts. No wallet or chain operations.
  */
 export type ApiContract =
   | Identifier
@@ -54,7 +54,15 @@ export type ApiContract =
   | ROOM_STATE
   | ROOM_SESSION
   | ROOM_START
-  | PublicGameEvent;
+  | PublicGameEvent
+  | GameType
+  | Card
+  | BlackjackHand
+  | BlackjackDealer
+  | BlackjackState
+  | BLACKJACK_HIT
+  | BLACKJACK_STAND
+  | BLACKJACK_STATE;
 export type Identifier = string;
 /**
  * Exact base-unit integer string. Services must also enforce u128 and budget limits.
@@ -83,7 +91,9 @@ export type ClientMessage =
   | PLAYER_CHAT
   | PLAYER_RECONNECT
   | ROOM_LEAVE
-  | ROOM_START;
+  | ROOM_START
+  | BLACKJACK_HIT
+  | BLACKJACK_STAND;
 export type ServerMessage =
   | PONG
   | CONNECTED
@@ -97,7 +107,9 @@ export type ServerMessage =
   | PLAYER_DISCONNECT
   | ERROR
   | ROOM_STATE
-  | ROOM_SESSION;
+  | ROOM_SESSION
+  | BLACKJACK_STATE;
+export type GameType = "LIARS_DICE" | "BLACKJACK";
 
 export interface Bid {
   quantity: number;
@@ -284,6 +296,14 @@ export interface ROOM_CREATE {
   payload: {
     displayName: string;
     avatar: Avatar;
+    /**
+     * Defaults to LIARS_DICE for older clients. The web client selects BLACKJACK by default.
+     */
+    game?: "LIARS_DICE" | "BLACKJACK";
+    /**
+     * Rule-based NPC seats: 1 adds Don Raccoone, 2 also adds Foxy. Defaults to 1.
+     */
+    agents?: number;
   };
 }
 export interface ROOM_JOIN {
@@ -447,6 +467,24 @@ export interface ROOM_START {
     roomId: Identifier;
   };
 }
+export interface BLACKJACK_HIT {
+  protocolVersion: 1;
+  type: "BLACKJACK_HIT";
+  requestId: Identifier | null;
+  payload: {
+    matchId: Identifier;
+    expectedRevision: number;
+  };
+}
+export interface BLACKJACK_STAND {
+  protocolVersion: 1;
+  type: "BLACKJACK_STAND";
+  requestId: Identifier | null;
+  payload: {
+    matchId: Identifier;
+    expectedRevision: number;
+  };
+}
 export interface ROOM_STATE {
   protocolVersion: 1;
   type: "ROOM_STATE";
@@ -460,10 +498,12 @@ export interface RoomState {
   hostId: Identifier;
   youId: Identifier;
   /**
-   * @minItems 2
+   * @minItems 1
    * @maxItems 4
    */
-  participants: [RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat, RoomSeat];
+  participants:
+    [RoomSeat] | [RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat, RoomSeat];
+  game: GameType;
 }
 export interface RoomSeat {
   playerId: Identifier;
@@ -483,4 +523,85 @@ export interface ROOM_SESSION {
     playerId: Identifier;
     resumeToken: ResumeToken;
   };
+}
+export interface BLACKJACK_STATE {
+  protocolVersion: 1;
+  type: "BLACKJACK_STATE";
+  requestId: Identifier | null;
+  payload: BlackjackState;
+}
+export interface BlackjackState {
+  matchId: Identifier;
+  phase: "IN_PROGRESS" | "FINISHED";
+  /**
+   * @minItems 1
+   * @maxItems 4
+   */
+  players:
+    | [BlackjackHand]
+    | [BlackjackHand, BlackjackHand]
+    | [BlackjackHand, BlackjackHand, BlackjackHand]
+    | [BlackjackHand, BlackjackHand, BlackjackHand, BlackjackHand];
+  dealer: BlackjackDealer;
+  currentPlayerId: Identifier | null;
+  revision: number;
+  deadlineEpochMillis: number;
+}
+export interface BlackjackHand {
+  playerId: Identifier;
+  displayName: string;
+  avatar: Avatar;
+  npc: boolean;
+  /**
+   * @minItems 2
+   * @maxItems 12
+   */
+  cards:
+    | [Card, Card]
+    | [Card, Card, Card]
+    | [Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card, Card, Card, Card, Card];
+  total: number;
+  status: "PLAYING" | "STOOD" | "BUST" | "BLACKJACK";
+  outcome: ("WIN" | "LOSE" | "PUSH" | "BLACKJACK") | null;
+}
+export interface Card {
+  rank: "A" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "J" | "Q" | "K";
+  suit: "S" | "H" | "D" | "C";
+}
+/**
+ * The house dealer. It has no seat and follows fixed rules.
+ */
+export interface BlackjackDealer {
+  /**
+   * Face-up cards only. The hole card is never sent before the dealer reveals it.
+   *
+   * @minItems 1
+   * @maxItems 12
+   */
+  cards:
+    | [Card]
+    | [Card, Card]
+    | [Card, Card, Card]
+    | [Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card, Card, Card, Card]
+    | [Card, Card, Card, Card, Card, Card, Card, Card, Card, Card, Card, Card];
+  hiddenCards: number;
+  /**
+   * Total of the face-up cards.
+   */
+  total: number;
 }

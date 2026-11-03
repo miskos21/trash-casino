@@ -1,6 +1,7 @@
 package com.raccoonroyale.rooms;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.raccoonroyale.games.BlackjackGame;
 import com.raccoonroyale.games.LiarsDiceGame;
 import com.raccoonroyale.websocket.Protocol;
 import java.io.IOException;
@@ -47,19 +48,24 @@ public class RoomService {
         }
     }
     private static class Room {
-        final String id=UUID.randomUUID().toString(), code;
+        final String id=UUID.randomUUID().toString(), code, gameType;
         final List<Seat> seats=new ArrayList<>();
         final List<PublicGameEvent> history=new ArrayList<>();
         String hostId, matchId;
         LiarsDiceGame game;
+        BlackjackGame blackjack;
+        Map<String,Seat> dealt=Map.of(); // Hands outlive seats that leave after the hand ends.
         LiarsDiceGame.RoundResult reveal;
         long revision, deadline, npcAt, resumeAt, lastActivity, eventSequence;
-        Room(String code) { this.code=code; this.lastActivity=System.currentTimeMillis(); }
+        Room(String code,String gameType) { this.code=code; this.gameType=gameType; this.lastActivity=System.currentTimeMillis(); }
         LiarsDiceGame.PublicState state() { return game.viewFor(seats.getFirst().id).publicState(); }
-        String phase() { return game==null ? "LOBBY" : state().winnerId()==null ? "IN_PROGRESS" : "FINISHED"; }
+        String phase() {
+            if(blackjack!=null) return blackjack.publicState().finished() ? "FINISHED" : "IN_PROGRESS";
+            return game==null ? "LOBBY" : state().winnerId()==null ? "IN_PROGRESS" : "FINISHED";
+        }
     }
     public record RoomSeat(String playerId,String displayName,String avatar,boolean npc,boolean ready,boolean connected) {}
-    public record RoomState(String roomId,String roomCode,String phase,String hostId,String youId,List<RoomSeat> participants) {}
+    public record RoomState(String roomId,String roomCode,String game,String phase,String hostId,String youId,List<RoomSeat> participants) {}
     public record Participant(String playerId,String displayName,String avatar,boolean npc,int diceCount) {}
     public record PublicGameEvent(String id,int round,String type,String actorId,LiarsDiceGame.Bid bid,
         String loserId,Integer actualCount,String cause) {}
@@ -67,6 +73,11 @@ public class RoomService {
         String currentPlayerId,LiarsDiceGame.Bid lastBid,String lastBidderId,String winnerId,
         long revision,long deadlineEpochMillis,long resumeAtEpochMillis,List<PublicGameEvent> history) {}
     public record PlayerState(PublicState publicState,List<Integer> ownDice) {}
+    public record BlackjackHand(String playerId,String displayName,String avatar,boolean npc,List<BlackjackGame.Card> cards,int total,
+        BlackjackGame.Status status,BlackjackGame.Outcome outcome) {}
+    public record BlackjackDealer(List<BlackjackGame.Card> cards,int hiddenCards,int total) {}
+    public record BlackjackState(String matchId,String phase,List<BlackjackHand> players,BlackjackDealer dealer,
+        String currentPlayerId,long revision,long deadlineEpochMillis) {}
     private static class Rejected extends RuntimeException {
         final String code;
         Rejected(String code,String text) { super(text);this.code=code; }
@@ -115,6 +126,7 @@ public class RoomService {
                 case "ROOM_READY" -> ready(peer,payload);
                 case "ROOM_START" -> start(peer,payload);
                 case "PLAYER_BID","CALL_BLUFF" -> action(peer,type,payload);
+                case "BLACKJACK_HIT","BLACKJACK_STAND" -> blackjackAction(peer,type,payload);
                 default -> throw new Rejected("NOT_IMPLEMENTED","This feature is not connected yet.");
             }
             peer.requests.put(key,message.toString());
@@ -136,10 +148,12 @@ public class RoomService {
             for(int i=0;i<6;i++) value.append(alphabet.charAt(random.nextInt(alphabet.length())));
             code=value.toString();
         } while(findCode(code)!=null);
-        Room room=new Room(code);
+        Room room=new Room(code,payload.has("game") ? payload.get("game").asText() : "LIARS_DICE");
         Seat human=human(payload,peer.socket);
         room.hostId=human.id;room.seats.add(human);
-        room.seats.add(new Seat("don-"+UUID.randomUUID(),"Don Raccoone","RACCOON",null,true,null));
+        int agents=payload.has("agents") ? payload.get("agents").asInt() : 1;
+        if(agents>=1) room.seats.add(new Seat("don-"+UUID.randomUUID(),"Don Raccoone","RACCOON",null,true,null));
+        if(agents>=2) room.seats.add(new Seat("foxy-"+UUID.randomUUID(),"Foxy","FOX",null,true,null));
         rooms.put(room.id,room);attach(peer,room,human);publish(room);
     }
     private Seat human(JsonNode payload,WebSocketSession socket) {
@@ -153,9 +167,10 @@ public class RoomService {
         Room room=findCode(payload.path("roomCode").asText());
         require(room!=null,"ROOM_NOT_FOUND","Room code not found.");
         require(room.game==null,"ROOM_STARTED","This room has already started.");
-        require(room.seats.size()<4,"ROOM_FULL","Table is full (three humans and one NPC).");
+        require(room.seats.size()<4,"ROOM_FULL","Table is full (four seats including agents).");
         Seat human=human(payload,peer.socket);
-        room.seats.add(room.seats.size()-1,human);attach(peer,room,human);publish(room);
+        room.seats.add((int)room.seats.stream().filter(s->!s.npc).count(),human); // Humans sit before agents.
+        attach(peer,room,human);publish(room);
     }
     private void attach(Peer peer,Room room,Seat seat) {
         peer.roomId=room.id;peer.playerId=seat.id;seat.socket=peer.socket;seat.disconnectedAt=0;
@@ -203,11 +218,20 @@ public class RoomService {
         room.seats.removeIf(s->s.abandoned);
         require(room.seats.stream().filter(s->!s.npc).allMatch(s->s.ready&&s.socket!=null&&s.socket.isOpen()),
             "NOT_READY","All human players must be connected and ready.");
+        require(room.gameType.equals("BLACKJACK")||room.seats.size()>=2,"NOT_READY",
+            "Liar’s Dice needs at least two players. Add an agent or invite a friend.");
         room.matchId=UUID.randomUUID().toString();
-        room.game=new LiarsDiceGame(room.seats.stream().map(s->s.id).toList());
         room.reveal=null;room.revision=0;room.resumeAt=0;room.eventSequence=0;room.history.clear();
-        event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
-        scheduleTurn(room);
+        if(room.gameType.equals("BLACKJACK")) {
+            // The house deals without a seat; humans and agents each hold a hand.
+            room.dealt=new LinkedHashMap<>();room.seats.forEach(s->room.dealt.put(s.id,s));
+            room.blackjack=new BlackjackGame(room.seats.stream().map(s->s.id).toList());
+            afterBlackjackMove(room);
+        } else {
+            room.game=new LiarsDiceGame(room.seats.stream().map(s->s.id).toList());
+            event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
+            scheduleTurn(room);
+        }
         for(Seat s:room.seats) if(s.socket!=null) send(s.socket,"GAME_START",null,Map.of("matchId",room.matchId));
         publish(room);
     }
@@ -220,6 +244,19 @@ public class RoomService {
         LiarsDiceGame.Action action=type.equals("CALL_BLUFF")?new LiarsDiceGame.CallBluff():
             new LiarsDiceGame.Bid(payload.path("bid").path("quantity").asInt(),payload.path("bid").path("face").asInt());
         apply(room,peer.playerId,action,"PLAYER");
+    }
+    private void blackjackAction(Peer peer,String type,JsonNode payload) {
+        Room room=room(peer);
+        require(room.blackjack!=null&&room.phase().equals("IN_PROGRESS"),"ILLEGAL_ACTION","No active hand.");
+        require(room.matchId.equals(payload.path("matchId").asText()),"STALE_STATE","Wrong match.");
+        require(room.revision==payload.path("expectedRevision").asLong(),"STALE_STATE","The turn has changed. Use the latest state.");
+        room.blackjack.apply(peer.playerId,type.equals("BLACKJACK_HIT")?BlackjackGame.Action.HIT:BlackjackGame.Action.STAND);
+        room.revision++;room.lastActivity=System.currentTimeMillis();
+        afterBlackjackMove(room);publish(room);
+    }
+    private void afterBlackjackMove(Room room) {
+        if(room.blackjack.publicState().finished()) {room.deadline=0;room.seats.forEach(s->s.ready=s.npc);}
+        else scheduleTurn(room);
     }
     private void event(Room room,String type,int round,String actor,LiarsDiceGame.Bid bid,String loser,Integer count,String cause) {
         room.history.add(new PublicGameEvent(room.matchId+"-"+(++room.eventSequence),round,type,actor,bid,loser,count,cause));
@@ -262,7 +299,16 @@ public class RoomService {
     private void snapshot(Room room,Seat recipient) {
         if(recipient.socket==null||!recipient.socket.isOpen()) return;
         var seats=room.seats.stream().map(s->new RoomSeat(s.id,s.name,s.avatar,s.npc,s.ready,s.npc||s.socket!=null&&s.socket.isOpen())).toList();
-        send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.phase(),room.hostId,recipient.id,seats));
+        send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.gameType,room.phase(),room.hostId,recipient.id,seats));
+        if(room.blackjack!=null) {
+            var state=room.blackjack.publicState();
+            var hands=state.players().stream().map(h->{Seat s=room.dealt.get(h.playerId());
+                return new BlackjackHand(h.playerId(),s.name,s.avatar,s.npc,h.cards(),h.total(),h.status(),h.outcome());}).toList();
+            send(recipient.socket,"BLACKJACK_STATE",null,new BlackjackState(room.matchId,room.phase(),hands,
+                new BlackjackDealer(state.dealerCards(),state.hiddenCards(),state.dealerTotal()),
+                state.currentPlayerId(),room.revision,room.deadline));
+            return;
+        }
         if(room.game==null) return;
         var view=room.game.viewFor(recipient.id);var state=view.publicState();
         var participants=room.seats.stream().map(s->new Participant(s.id,s.name,s.avatar,s.npc,state.diceCounts().get(s.id))).toList();
@@ -300,6 +346,14 @@ public class RoomService {
                 publish(room);
             }
             if(!room.phase().equals("IN_PROGRESS")) continue;
+            if(room.blackjack!=null) {
+                String actor=room.blackjack.publicState().currentPlayerId();Seat seat=seat(room,actor);
+                if((seat.npc||seat.abandoned)?now>=room.npcAt:now>=room.deadline) {
+                    room.blackjack.apply(actor,seat.npc?room.blackjack.npcMoveFor(actor):room.blackjack.fallbackFor(actor));
+                    room.revision++;afterBlackjackMove(room);publish(room);
+                }
+                continue;
+            }
             String actor=room.state().currentPlayerId();Seat seat=seat(room,actor);
             if((seat.npc||seat.abandoned)?now>=room.npcAt:now>=room.deadline)
                 apply(room,actor,room.game.fallbackFor(actor),seat.npc?"NPC":seat.abandoned?"UNAVAILABLE":"TIMEOUT");

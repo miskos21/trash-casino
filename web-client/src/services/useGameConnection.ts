@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ClientMessage, PlayerGameState, RoomState, ROOM_SESSION, DICE_REVEAL } from '@raccoon-royale/shared-schemas/types';
+import type { BlackjackState, ClientMessage, PlayerGameState, RoomState, ROOM_SESSION, DICE_REVEAL } from '@raccoon-royale/shared-schemas/types';
 import { checkHealth, parseServer } from './backend';
 
 type Status = 'checking' | 'online' | 'offline';
@@ -21,6 +21,7 @@ export function useGameConnection() {
   const [socket, setSocket] = useState<Status>('checking');
   const [room, setRoom] = useState<RoomState | null>(null);
   const [game, setGame] = useState<PlayerGameState | null>(null);
+  const [blackjack, setBlackjack] = useState<BlackjackState | null>(null);
   const [reveal, setReveal] = useState<DICE_REVEAL['payload'] | null>(null);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
@@ -59,13 +60,14 @@ export function useGameConnection() {
               try { sessionStorage.setItem(storageKey, JSON.stringify(message.payload)); } catch { /* Reload recovery unavailable. */ }
               break;
             case 'ROOM_STATE': setRoom(message.payload); setPending(false); break;
-            case 'GAME_START': setReveal(null); setGame(null); break;
+            case 'GAME_START': setReveal(null); setGame(null); setBlackjack(null); break;
             case 'GAME_STATE': setGame(message.payload); setPending(false); break;
+            case 'BLACKJACK_STATE': setBlackjack(message.payload); setPending(false); break;
             case 'DICE_REVEAL': setReveal(message.payload); break;
             case 'ERROR':
               setError(message.payload.message); setPending(false);
               if (message.payload.code === 'INVALID_SESSION') {
-                resume.current = null; setRoom(null); setGame(null); setReveal(null);
+                resume.current = null; setRoom(null); setGame(null); setBlackjack(null); setReveal(null);
                 try { sessionStorage.removeItem(storageKey); } catch { /* No storage. */ }
               }
               break;
@@ -101,9 +103,9 @@ export function useGameConnection() {
     send({ protocolVersion: 1, type: 'ROOM_LEAVE', requestId: null, payload: { roomId: room.roomId } });
     resume.current = null;
     try { sessionStorage.removeItem(storageKey); } catch { /* No storage. */ }
-    setRoom(null); setGame(null); setReveal(null); setPending(false);
+    setRoom(null); setGame(null); setBlackjack(null); setReveal(null); setPending(false);
   }, [room, send]);
-  return { health, socket, room, game, reveal, error, pending, send, leave,
+  return { health, socket, room, game, blackjack, reveal, error, pending, send, leave,
     retry: () => setAttempt((n) => n + 1), clearError: () => setError('') };
 }
 export type GameConnection = ReturnType<typeof useGameConnection>;

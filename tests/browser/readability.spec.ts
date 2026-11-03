@@ -17,6 +17,7 @@ test('four seats keep dice separate from cups and show a consistent public revea
     await page.getByRole('button', { name: 'Open menu', exact: true }).click();
     await page.getByRole('button', { name: 'Frog', exact: true }).click();
     await page.getByLabel('Player name').fill('Host');
+    await page.getByRole('button', { name: 'Liar’s Dice', exact: true }).click(); // Blackjack is the default.
     await page.getByRole('button', { name: 'Create room', exact: true }).click();
     const roomCode = await page.getByLabel('Room code', { exact: true }).textContent();
     const endpoint = new URL('/ws', baseURL);
