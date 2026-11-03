@@ -9,6 +9,16 @@ ajv.addSchema(schema);
 const validate = (definition, data) => ajv.validate({ $ref: `${schema.$id}#/$defs/${definition}` }, data);
 const envelope = (type, payload = {}) => ({ protocolVersion: 1, type, requestId: 'request-1', payload });
 
+test('presence and confirmed departure are server messages only', () => {
+  assert.ok(validate('ServerMessage', envelope('ROOM_LEFT', { roomId: 'room-1' })));
+  assert.equal(validate('ClientMessage', envelope('ROOM_LEFT', { roomId: 'room-1' })), false);
+  const seat = { playerId: 'p1', displayName: 'Guest', avatar: 'CAT', npc: false, ready: false, connected: false, presence: 'LEFT' };
+  assert.ok(validate('RoomSeat', seat));
+  assert.ok(validate('RoomSeat', { ...seat, presence: 'DISCONNECTED' }));
+  assert.equal(validate('RoomSeat', { ...seat, presence: 'still-playing' }), false);
+  assert.equal(validate('RoomSeat', { ...seat, resumeToken: 'secret' }), false);
+});
+
 test('directional message contracts reject authority smuggled in by a client', () => {
   assert.ok(validate('ClientMessage', envelope('PLAYER_BID', { matchId: 'match-1', expectedRevision: 0, bid: { quantity: 2, face: 6 } })));
   assert.equal(validate('ClientMessage', envelope('PLAYER_BID', { matchId: 'match-1', bid: { quantity: 2, face: 6 }, dice: [6, 6] })), false);

@@ -28,6 +28,7 @@ export function useGameConnection() {
   const [reveal, setReveal] = useState<DICE_REVEAL['payload'] | null>(null);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const connection = useRef<WebSocket | null>(null);
   const resume = useRef<Session | null>(savedSession());
 
@@ -35,6 +36,7 @@ export function useGameConnection() {
     let active = true;
     let answered = false;
     let reconnectTimer: number | undefined;
+    let heartbeat: number | undefined;
     const abort = new AbortController();
     setHealth('checking'); setSocket('checking'); setPending(false);
     checkHealth(abort.signal).then(() => { if (active) setHealth('online'); })
@@ -46,7 +48,15 @@ export function useGameConnection() {
       url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(url);
       connection.current = ws;
-      const pingId = requestId();
+      let pingId = requestId();
+      let lastPong = Date.now();
+      heartbeat = window.setInterval(() => {
+        if (Date.now() - lastPong > 15000) { ws.close(); return; }
+        if (ws.readyState === WebSocket.OPEN) {
+          pingId = requestId();
+          ws.send(JSON.stringify({ protocolVersion: 1, type: 'PING', requestId: pingId, payload: {} }));
+        }
+      }, 5000);
       ws.onmessage = ({ data }: MessageEvent<string>) => {
         if (!active) return;
         try {
@@ -57,12 +67,18 @@ export function useGameConnection() {
               if (resume.current) ws.send(JSON.stringify({ protocolVersion: 1, type: 'PLAYER_RECONNECT',
                 requestId: requestId(), payload: { roomId: resume.current.roomId, resumeToken: resume.current.resumeToken } }));
               break;
-            case 'PONG': if (message.requestId === pingId) { answered = true; setSocket('online'); } break;
+            case 'PONG': if (message.requestId === pingId) { answered = true; lastPong = Date.now(); setSocket('online'); } break;
             case 'ROOM_SESSION':
               resume.current = message.payload;
               try { sessionStorage.setItem(storageKey, JSON.stringify(message.payload)); } catch { /* Reload recovery unavailable. */ }
               break;
             case 'ROOM_STATE': setRoom(message.payload); setPending(false); break;
+            case 'ROOM_LEFT':
+              if (message.payload.roomId !== resume.current?.roomId) break;
+              resume.current = null;
+              try { sessionStorage.removeItem(storageKey); } catch { /* No storage. */ }
+              setRoom(null); setGame(null); setBlackjack(null); setReveal(null); setPending(false); setLeaving(false);
+              break;
             case 'GAME_START': setReveal(null); setGame(null); setBlackjack(null); break;
             case 'GAME_STATE': setGame(message.payload); setPending(false); break;
             case 'BLACKJACK_STATE': {
@@ -76,7 +92,7 @@ export function useGameConnection() {
             }
             case 'DICE_REVEAL': setReveal(message.payload); break;
             case 'ERROR':
-              setError(message.payload.message); setPending(false);
+              setError(message.payload.message); setPending(false); setLeaving(false);
               if (message.payload.code === 'INVALID_SESSION') {
                 resume.current = null; setRoom(null); setGame(null); setBlackjack(null); setReveal(null);
                 try { sessionStorage.removeItem(storageKey); } catch { /* No storage. */ }
@@ -87,7 +103,8 @@ export function useGameConnection() {
       };
       ws.onclose = () => {
         if (!active) return;
-        setSocket('offline'); setPending(false);
+        clearInterval(heartbeat);
+        setSocket('offline'); setPending(false); setLeaving(false);
         reconnectTimer = window.setTimeout(() => setAttempt((n) => n + 1), 1500);
       };
       ws.onerror = () => { if (active) setSocket('offline'); };
@@ -98,6 +115,7 @@ export function useGameConnection() {
     }, 5000);
     return () => {
       active = false; abort.abort(); clearTimeout(start); clearTimeout(deadline); clearTimeout(reconnectTimer);
+      clearInterval(heartbeat);
       connection.current?.close(); connection.current = null;
     };
   }, [attempt]);
@@ -110,13 +128,11 @@ export function useGameConnection() {
   }, [socket]);
 
   const leave = useCallback(() => {
-    if (!room) return;
+    if (!room || socket !== 'online' || leaving) return;
+    setLeaving(true);
     send({ protocolVersion: 1, type: 'ROOM_LEAVE', requestId: null, payload: { roomId: room.roomId } });
-    resume.current = null;
-    try { sessionStorage.removeItem(storageKey); } catch { /* No storage. */ }
-    setRoom(null); setGame(null); setBlackjack(null); setReveal(null); setPending(false);
-  }, [room, send]);
-  return { health, socket, room, game, blackjack, witnessed: witnessed.hands, reveal, error, pending, send, leave,
+  }, [room, socket, leaving, send]);
+  return { health, socket, room, game, blackjack, witnessed: witnessed.hands, reveal, error, pending, leaving, send, leave,
     retry: () => setAttempt((n) => n + 1), clearError: () => setError('') };
 }
 export type GameConnection = ReturnType<typeof useGameConnection>;

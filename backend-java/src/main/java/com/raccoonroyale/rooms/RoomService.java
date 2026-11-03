@@ -34,6 +34,7 @@ public class RoomService {
         String roomId, playerId;
         long rateStart;
         int count;
+        long lastSeen=System.currentTimeMillis();
         Peer(WebSocketSession socket) { this.socket = socket; }
     }
     private static class Seat {
@@ -64,7 +65,7 @@ public class RoomService {
             return game==null ? "LOBBY" : state().winnerId()==null ? "IN_PROGRESS" : "FINISHED";
         }
     }
-    public record RoomSeat(String playerId,String displayName,String avatar,boolean npc,boolean ready,boolean connected) {}
+    public record RoomSeat(String playerId,String displayName,String avatar,boolean npc,boolean ready,boolean connected,String presence) {}
     public record RoomState(String roomId,String roomCode,String game,String phase,String hostId,String youId,List<RoomSeat> participants) {}
     public record Participant(String playerId,String displayName,String avatar,boolean npc,int diceCount) {}
     public record PublicGameEvent(String id,int round,String type,String actorId,LiarsDiceGame.Bid bid,
@@ -108,6 +109,7 @@ public class RoomService {
         String type=message.path("type").asText();
         try {
             long now=System.currentTimeMillis();
+            peer.lastSeen=now;
             if(now-peer.rateStart>10_000) {peer.count=0;peer.rateStart=now;}
             require(++peer.count<=120,"RATE_LIMITED","Too many commands. Try again shortly.");
             if(type.equals("PING")) {send(socket,"PONG",requestId,Map.of());return;}
@@ -115,6 +117,7 @@ public class RoomService {
             String key=requestId.asText(), previous=peer.requests.get(key);
             if(previous!=null) {
                 require(previous.equals(message.toString()),"INVALID_MESSAGE","Request ID was already used.");
+                if(type.equals("ROOM_LEAVE")) send(socket,"ROOM_LEFT",requestId,Map.of("roomId",message.path("payload").path("roomId").asText()));
                 if(peer.roomId!=null && rooms.containsKey(peer.roomId)) snapshot(rooms.get(peer.roomId),seat(rooms.get(peer.roomId),peer.playerId));
                 return;
             }
@@ -123,7 +126,10 @@ public class RoomService {
                 case "ROOM_CREATE" -> create(peer,payload);
                 case "ROOM_JOIN" -> join(peer,payload);
                 case "PLAYER_RECONNECT" -> reconnect(peer,payload);
-                case "ROOM_LEAVE" -> leave(peer,payload);
+                case "ROOM_LEAVE" -> {
+                    leave(peer,payload);
+                    send(socket,"ROOM_LEFT",requestId,Map.of("roomId",payload.path("roomId").asText()));
+                }
                 case "ROOM_READY" -> ready(peer,payload);
                 case "ROOM_START" -> start(peer,payload);
                 case "PLAYER_BID","CALL_BLUFF" -> action(peer,type,payload);
@@ -167,7 +173,7 @@ public class RoomService {
         require(peer.roomId==null,"ALREADY_IN_ROOM","Leave your current room first.");
         Room room=findCode(payload.path("roomCode").asText());
         require(room!=null,"ROOM_NOT_FOUND","Room code not found.");
-        require(room.game==null,"ROOM_STARTED","This room has already started.");
+        require(room.matchId==null,"ROOM_STARTED","This room has already started.");
         require(room.seats.size()<4,"ROOM_FULL","Table is full (four seats including agents).");
         Seat human=human(payload,peer.socket);
         room.seats.add((int)room.seats.stream().filter(s->!s.npc).count(),human); // Humans sit before agents.
@@ -293,15 +299,46 @@ public class RoomService {
     private void leave(Peer peer,JsonNode payload) {
         Room room=room(peer);assertRoom(room,payload);
         Seat seat=seat(room,peer.playerId);
-        seat.socket=null;seat.abandoned=true;seat.ready=false;
+        seat.socket=null;seat.ready=false;
+        boolean inProgress=room.phase().equals("IN_PROGRESS");
+        abandon(room,seat);
         peer.roomId=null;peer.playerId=null;
-        if(!room.phase().equals("IN_PROGRESS")) room.seats.remove(seat);
+        if(!inProgress) room.seats.remove(seat);
         if(seat.id.equals(room.hostId)) room.hostId=room.seats.stream().filter(s->!s.npc&&!s.abandoned).map(s->s.id).findFirst().orElse(seat.id);
         if(room.seats.stream().noneMatch(s->!s.npc&&!s.abandoned)) rooms.remove(room.id);else publish(room);
     }
+    private void abandon(Room room,Seat seat) {
+        if(seat.abandoned) return;
+        seat.abandoned=true;seat.ready=false;
+        if(!room.phase().equals("IN_PROGRESS")) return;
+        room.revision++;
+        if(room.blackjack!=null) {
+            var before=room.blackjack.publicState();
+            room.blackjack.leave(seat.id);
+            var after=room.blackjack.publicState();
+            if(!Objects.equals(before.currentPlayerId(),after.currentPlayerId()) || before.handOver()!=after.handOver()) afterBlackjackMove(room);
+        } else {
+            boolean active=room.state().diceCounts().get(seat.id)>0;
+            room.game.forfeit(seat.id);
+            event(room,"PLAYER_LEFT",room.state().round(),seat.id,null,null,null,null);
+            if(!active) return;
+            room.reveal=null;room.resumeAt=0;
+            if(room.state().winnerId()!=null) {
+                room.deadline=0;room.seats.forEach(s->s.ready=s.npc);
+                event(room,"GAME_OVER",room.state().round(),room.state().winnerId(),null,null,null,null);
+                for(Seat s:room.seats) if(s.socket!=null) result(room,s.socket);
+            } else {
+                event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
+                scheduleTurn(room);
+            }
+        }
+    }
     private void snapshot(Room room,Seat recipient) {
         if(recipient.socket==null||!recipient.socket.isOpen()) return;
-        var seats=room.seats.stream().map(s->new RoomSeat(s.id,s.name,s.avatar,s.npc,s.ready,s.npc||s.socket!=null&&s.socket.isOpen())).toList();
+        var seats=room.seats.stream().map(s->{
+            boolean connected=s.npc||s.socket!=null&&s.socket.isOpen();
+            return new RoomSeat(s.id,s.name,s.avatar,s.npc,s.ready,connected,s.abandoned?"LEFT":connected?"ONLINE":"DISCONNECTED");
+        }).toList();
         send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.gameType,room.phase(),room.hostId,recipient.id,seats));
         if(room.blackjack!=null) {
             var state=room.blackjack.publicState();
@@ -336,6 +373,7 @@ public class RoomService {
     @Scheduled(fixedDelay=200)
     public synchronized void tick() {
         long now=System.currentTimeMillis();
+        expireConnections(now);
         var iterator=rooms.values().iterator();
         while(iterator.hasNext()) {
             Room room=iterator.next();
@@ -343,7 +381,7 @@ public class RoomService {
                 &&(s.socket!=null||now-s.disconnectedAt<120_000))) {iterator.remove();continue;}
             boolean changed=false;
             for(Seat s:room.seats) if(!s.npc&&!s.abandoned&&s.socket==null&&now-s.disconnectedAt>=120_000) {
-                s.abandoned=true;s.ready=false;changed=true;
+                abandon(room,s);changed=true;
             }
             if(!room.phase().equals("IN_PROGRESS")) changed|=room.seats.removeIf(s->s.abandoned);
             if(changed) {
@@ -367,6 +405,13 @@ public class RoomService {
             String actor=room.state().currentPlayerId();Seat seat=seat(room,actor);
             if((seat.npc||seat.abandoned)?now>=room.npcAt:now>=room.deadline)
                 apply(room,actor,room.game.fallbackFor(actor),seat.npc?"NPC":seat.abandoned?"UNAVAILABLE":"TIMEOUT");
+        }
+    }
+    /** Application heartbeat also detects half-open sockets after network loss. */
+    synchronized void expireConnections(long now) {
+        for(Peer peer:new ArrayList<>(peers.values())) if(now-peer.lastSeen>45_000) {
+            disconnected(peer.socket);
+            try {peer.socket.close(CloseStatus.SESSION_NOT_RELIABLE);}catch(IOException ignored) {}
         }
     }
     public synchronized void invalid(WebSocketSession socket) {error(socket,null,"INVALID_MESSAGE","Message does not match protocol v1.");}

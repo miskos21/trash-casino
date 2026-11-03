@@ -44,6 +44,7 @@ public final class BlackjackGame {
     private static final List<String> RANKS = List.of("A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K");
     private static final List<String> SUITS = List.of("S", "H", "D", "C");
     private final List<String> seats;
+    private final java.util.Set<String> departed = new java.util.HashSet<>();
     private final List<Card> shoe;
     private final int cutCardRemaining, burned;
     private final String salt, commitment;
@@ -78,7 +79,7 @@ public final class BlackjackGame {
             || playerIds.stream().distinct().count() != playerIds.size()) {
             throw new IllegalArgumentException("Require 1–4 unique player IDs");
         }
-        seats = List.copyOf(playerIds);
+        seats = new ArrayList<>(playerIds);
         shoe = List.copyOf(cards);
         this.cutCardRemaining = cutCardRemaining;
         this.salt = salt;
@@ -136,7 +137,21 @@ public final class BlackjackGame {
     /** Deals the next hand from the same shoe: the first hand after the shuffle, then after each result. */
     public synchronized void nextHand() {
         if (!handOver || shoeOver) throw new IllegalStateException("No next hand in this shoe");
+        // Preserve the completed hand for shoe verification, then stop dealing to departed players.
+        seats.removeAll(departed);
+        departed.forEach(id -> { hands.remove(id); statuses.remove(id); outcomes.remove(id); tallies.remove(id); });
+        if (seats.isEmpty()) { shoeOver = true; return; }
         deal();
+    }
+
+    /** A departing player's already-dealt cards stay in the public hand; no future cards are dealt to them. */
+    public synchronized void leave(String actor) {
+        if (!hands.containsKey(actor)) throw new IllegalArgumentException("Unknown player");
+        departed.add(actor);
+        if (!handOver && statuses.get(actor) == Status.PLAYING) {
+            statuses.put(actor, Status.STOOD);
+            if (actor.equals(currentPlayer)) advanceFrom(seats.indexOf(actor));
+        }
     }
 
     private Card draw() {

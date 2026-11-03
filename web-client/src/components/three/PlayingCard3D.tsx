@@ -1,39 +1,45 @@
-import { CanvasTexture, SRGBColorSpace } from 'three';
+import { ExtrudeGeometry, Shape, ShapeGeometry, SRGBColorSpace, TextureLoader, type Texture } from 'three';
 import type { Card } from '@raccoon-royale/shared-schemas/types';
-import { suitSymbols } from '../PlayingCard';
+import { cardArtwork } from '../../game/cardArtwork';
 
-// Faces are drawn locally on a canvas: no font or image downloads. One texture per distinct card.
-const textures = new Map<string, CanvasTexture>();
-function cardTexture(card: Card | null) {
+export const CARD_WIDTH = 0.46, CARD_HEIGHT = 0.647;
+const width = CARD_WIDTH, height = CARD_HEIGHT, radius = 0.025;
+const outline = new Shape();
+outline.moveTo(-width / 2 + radius, -height / 2);
+outline.lineTo(width / 2 - radius, -height / 2);
+outline.quadraticCurveTo(width / 2, -height / 2, width / 2, -height / 2 + radius);
+outline.lineTo(width / 2, height / 2 - radius);
+outline.quadraticCurveTo(width / 2, height / 2, width / 2 - radius, height / 2);
+outline.lineTo(-width / 2 + radius, height / 2);
+outline.quadraticCurveTo(-width / 2, height / 2, -width / 2, height / 2 - radius);
+outline.lineTo(-width / 2, -height / 2 + radius);
+outline.quadraticCurveTo(-width / 2, -height / 2, -width / 2 + radius, -height / 2);
+const surface = new ShapeGeometry(outline, 5);
+const points = surface.getAttribute('position'), uv = surface.getAttribute('uv');
+for (let i = 0; i < points.count; i++) uv.setXY(i, (points.getX(i) + width / 2) / width, (points.getY(i) + height / 2) / height);
+const edge = new ExtrudeGeometry(outline, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.001, bevelSegments: 1, steps: 1, curveSegments: 5 });
+const textures = new Map<string, Texture>();
+function textureFor(card: Card | null) {
   const key = card ? card.rank + card.suit : 'back';
-  const cached = textures.get(key);
-  if (cached) return cached;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128; canvas.height = 180;
-  const g = canvas.getContext('2d')!;
-  g.fillStyle = card ? '#f4ecd8' : '#7c2f2a';
-  g.fillRect(0, 0, 128, 180);
-  g.strokeStyle = card ? '#cdbf9c' : '#d8b16a';
-  g.lineWidth = 6; g.strokeRect(6, 6, 116, 168);
-  if (card) {
-    g.fillStyle = card.suit === 'H' || card.suit === 'D' ? '#b2342b' : '#1e2a22';
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = 'bold 34px Georgia, serif'; g.fillText(card.rank, 30, 32);
-    g.font = '64px Georgia, serif'; g.fillText(suitSymbols[card.suit], 64, 104);
-  } else {
-    g.strokeStyle = '#b5554b'; g.lineWidth = 3;
-    for (let i = -180; i < 180; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 180, 180); g.stroke(); }
+  let texture = textures.get(key);
+  if (!texture) {
+    texture = new TextureLoader().load(cardArtwork(card));
+    texture.colorSpace = SRGBColorSpace;
+    texture.anisotropy = 8;
+    textures.set(key, texture);
   }
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  textures.set(key, texture);
   return texture;
 }
 
-/** Presentation only: a null card is the dealer's face-down hole card, whose value the client never receives. */
+/** Rounded paper geometry and the same vector print as the HUD. A hidden card never has a face texture. */
 export function PlayingCard3D({ card, position, turn = 0 }: { card: Card | null; position: [number, number, number]; turn?: number }) {
-  // Flat on the felt; the top edge points away from whoever the card is dealt to.
-  return <mesh position={position} rotation={[-Math.PI / 2, 0, Math.PI + turn]} receiveShadow>
-    <planeGeometry args={[0.38, 0.53]} /><meshStandardMaterial map={cardTexture(card)} roughness={0.65} />
-  </mesh>;
+  return <group position={position} rotation={[-Math.PI / 2, 0, Math.PI + turn]} dispose={null}>
+    <mesh geometry={edge} castShadow receiveShadow><meshStandardMaterial color="#eee8db" roughness={0.85} /></mesh>
+    <mesh geometry={surface} position={[0, 0, 0.0075]} receiveShadow>
+      <meshStandardMaterial map={textureFor(card)} roughness={0.8} polygonOffset polygonOffsetFactor={-1} />
+    </mesh>
+    <mesh geometry={surface} position={[0, 0, -0.0015]} rotation={[0, Math.PI, 0]}>
+      <meshStandardMaterial map={textureFor(null)} roughness={0.8} />
+    </mesh>
+  </group>;
 }

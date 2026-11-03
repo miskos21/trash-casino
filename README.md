@@ -1,4 +1,4 @@
-# Raccoon Royale
+# Trashnino
 
 A browser-based 3D Liar's Dice party game for the NEAR hackathon. Animal NPCs can
 be persuaded and conned, but backend validation and contract limits must always
@@ -28,6 +28,12 @@ Implemented locally:
 - Free-play Blackjack, the web client's default room game (P2 minigame): every human
   and agent plays a hand against a seatless house dealer. Same rooms, timers, reconnects.
   Liar's Dice stays available and remains the P0 game for the chain features.
+- Shared vector playing cards in the HUD and on the table: full pip layouts,
+  illustrated court cards, matching patterned backs, rounded paper edges, and a
+  detailed shoe/discard tray. A procedural raccoon in a dinner jacket, shirt,
+  bow tie, and gloves represents the house dealer without taking a player seat.
+  Blackjack uses a larger table with a separate four-column area for each hand;
+  every card keeps the same physical size as longer hands wrap into more rows.
 
 Wallet signing, LLM decisions/chat, negotiations, starter grants, contracts,
 buy-in, and settlement are not
@@ -65,7 +71,8 @@ Open `http://localhost:5173`. The 3D room fills the browser window. Drag to orbi
 on your animal's face; **Table** restores the table view. The fullscreen button
 can additionally hide browser chrome when the browser allows it.
 
-Click **Menu**, your character portrait, or press **Esc** to open the in-game menu.
+Click **Play & character**, your character portrait, or press **Esc** to open the setup menu.
+Once in a room, the same button reads **Room & players**. The home table shows only your selected character.
 Choose an animal by its rendered portrait, then **Back to table**. The connection
 dot shows actual backend availability. Expand **Connection** inside the menu to
 see the API and WebSocket indicators and **Check connection again**. Both should
@@ -73,7 +80,7 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
 
 ### Play a match
 
-1. Open **Menu**, select an animal, enter a name, choose **Liar’s Dice** (Blackjack
+1. Open **Play & character**, select an animal, enter a name, choose **Liar’s Dice** (Blackjack
    is the default), pick the number of agents, and click **Create room**. Liar's Dice
    needs at least two participants, so with 0 agents wait for a friend.
 2. For multiplayer, open the app in a fresh tab or another browser, enter the
@@ -86,13 +93,13 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
 5. Ones are not wild. Turns expire after 30 seconds and use a deterministic legal
    fallback. Don uses the same fallback, without an LLM. The reveal pause is four
    seconds. The last participant with dice wins.
-6. Open **Menu** to ready up for a rematch or leave the room. Reloading the same
+6. Open **Room & players** to ready up for a rematch. The red **Leave match** / **Leave room** button is also always available in the header. Reloading the same
    tab restores that guest seat and its private view. Use a fresh tab, rather than
    duplicating an existing game tab, to create another player.
 
 ### Play Blackjack
 
-1. Open **Menu**. **Blackjack** is selected by default; choose **0**, **1** (Don), or
+1. Open **Play & character**. **Blackjack** is selected by default; choose **0**, **1** (Don), or
    **2** (Don + Foxy) agents, then **Create room**. Friends join with the code as
    above; humans plus agents fill at most four seats. The house dealer has no seat.
 2. **Ready**, then **Start match**. Everyone gets two face-up cards; the dealer
@@ -105,8 +112,8 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
    soft 17). Each hand shows Win, Lose, Push, or Blackjack. A dealer natural ends
    the hand immediately.
 5. After a four-second result pause the next hand is dealt from the same shoe, and
-   each seat's W/L/P tally keeps counting. The header shows the hand number and the
-   cards left. When the cut card comes out (75% of the shoe dealt), that hand
+   each seat's W/L/P tally keeps counting for the final standings. The header shows
+   the hand number. When the cut card comes out (75% of the shoe dealt), that hand
    finishes and the session ends with standings. Then use **Back to lobby**,
    **Ready**, **Play again** for a fresh shoe.
 
@@ -114,7 +121,8 @@ Like a casino shoe: before the first deal the dealer shuffles six decks once wit
 `SecureRandom` and burns the top card. Every hand then comes off the top of that
 same shoe, in order, until the cut card (about 15–30 hands depending on seats).
 
-**Shoe check.** Before the first card, the server publishes a fingerprint:
+**Shoe check.** Open **Room & players → Card verification** to inspect the fingerprint
+and the final check. These details stay out of the playing HUD. Before the first card, the server publishes a fingerprint:
 SHA-256 of a random salt plus the full card order. When the shoe ends it reveals
 the salt and order, and the browser checks three things itself. The order must match
 the fingerprint, the shoe must hold exactly six complete decks, and every hand that tab
@@ -135,8 +143,10 @@ who made the claim loses one. Ones are not wild.
 Your turn has a gold marker at the seat, a high-contrast banner, a highlighted
 action panel, and an explicit countdown. **Table activity** records the server's
 accepted public claims, bluff calls, results, NPC moves, and timeout moves, even
-after a reload. The previous reveal remains inspectable there. **How to play**
-explains the rules and the free-match economics in the game.
+after a reload. It starts collapsed; **Show moves** opens the history and previous
+reveal. **How to play** is in **Room & players**, alongside optional card verification.
+The match HUD shows only the turn, timer, cards/dice, opponents, and actions.
+Camera controls stay as small corner buttons during play.
 
 During the reveal, the 3D dice and the private-dice panel show the same completed
 round. When play resumes, only your newly rolled dice remain visible. Cups sit
@@ -145,8 +155,16 @@ lamp shade so it does not block the table.
 
 Guest recovery is tab-scoped (`sessionStorage`), not NEP-413 or wallet auth. Rooms
 and secrets are in memory: restarting Java ends all matches. A disconnected guest
-has two minutes to return; its turn still times out. Explicitly leaving a running
-match makes the server play fallback moves for that seat. Idle rooms expire after
+has two minutes to return; its turn still times out. Their 3D seat becomes empty,
+and the lobby and match show **Disconnected**. Heartbeats detect a lost connection
+even when no socket close arrives (within 45 seconds on the server).
+
+**Leave match** waits for server acknowledgement, revokes guest recovery, and shows
+**Left match** to the remaining players. In Liar’s Dice, departure forfeits all of
+the player’s dice, cancels an open claim, and starts a fresh round (or awards the
+last remaining player the win). In Blackjack, their current hand stands automatically
+and remains in the completed hand for shoe verification; they receive no further
+hands. A disconnect lasting two minutes follows the same departure rules. Idle rooms expire after
 one hour. No monetary state exists in this slice.
 
 If upgrading from the preview-only backend, rebuild/restart it:

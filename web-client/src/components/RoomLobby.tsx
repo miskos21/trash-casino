@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { Avatar, GameType } from '@raccoon-royale/shared-schemas/types';
 import type { GameConnection } from '../services/useGameConnection';
 import { GameRules } from './GameRules';
+import { LeaveRoomButton } from './LeaveRoomButton';
+import { SeatPresence } from './SeatPresence';
 
 const gameOptions: { id: GameType; name: string }[] = [
   { id: 'BLACKJACK', name: 'Blackjack' }, { id: 'LIARS_DICE', name: 'Liar’s Dice' },
@@ -47,13 +49,13 @@ export function RoomLobby({ connection: c, avatar, onStarted }: { connection: Ga
     {c.error && <p className="room-error" role="alert">{c.error}</p>}
   </section>;
   const me = room.participants.find((p) => p.playerId === room.youId)!;
-  const allReady = room.participants.every((p) => p.ready && p.connected);
-  const needsPlayer = room.game === 'LIARS_DICE' && room.participants.length < 2;
+  const allReady = room.participants.filter((p) => p.presence !== 'LEFT').every((p) => p.ready && p.connected);
+  const needsPlayer = room.game === 'LIARS_DICE' && room.participants.filter((p) => p.presence !== 'LEFT').length < 2;
   return <section className="room-lobby">
     <div className="room-code-line"><span>ROOM CODE</span><output aria-label="Room code">{room.roomCode}</output><small>Free play · {gameOptions.find((option) => option.id === room.game)!.name}</small></div>
     <ul className="lobby-seats">{room.participants.map((p) => <li key={p.playerId}>
       <span>{p.displayName}{p.playerId === room.youId ? ' (you)' : ''}</span>
-      <small>{p.npc ? 'Agent · rule-based' : !p.connected ? 'Reconnecting' : p.ready ? 'Ready' : 'Not ready'}</small>
+      {p.presence !== 'ONLINE' ? <SeatPresence seat={p} /> : <small>{p.npc ? 'Agent · rule-based' : p.ready ? 'Ready' : 'Not ready'}</small>}
     </li>)}</ul>
     {room.phase !== 'IN_PROGRESS' ? <div className="lobby-buttons">
       <button className="secondary-button" disabled={disabled} onClick={() => c.send({
@@ -65,6 +67,6 @@ export function RoomLobby({ connection: c, avatar, onStarted }: { connection: Ga
     </div> : <button className="resume-button" onClick={onStarted}>Return to match</button>}
     {needsPlayer && <p className="free-play-note">Waiting for a second player. Share the room code.</p>}
     {c.error && <p className="room-error" role="alert">{c.error}</p>}
-    <button className="leave-button" disabled={c.socket !== 'online'} onClick={c.leave}>Leave room</button>
+    <LeaveRoomButton connection={c} />
   </section>;
 }

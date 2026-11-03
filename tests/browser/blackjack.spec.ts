@@ -24,8 +24,10 @@ test('a guest plays Blackjack hands from one shoe with two agents against the ho
   await expect(page.locator('.die-face')).toHaveCount(0);
   // Casino shoe: the dealer shuffles and burns a card before the first deal; the fingerprint is published first.
   await expect(actions).toHaveAttribute('data-turn', 'shuffling');
-  await expect(page.locator('.match-heading small')).toContainText('NEW SHOE · 311 CARDS LEFT');
-  await expect(page.locator('.shoe-fingerprint code')).toHaveText(/^[0-9a-f]{8}…[0-9a-f]{8}$/);
+  await expect(page.locator('.match-heading small')).toHaveText('BLACKJACK');
+  await expect(actions.locator('.shoe-fingerprint, .claim-explanation, .match-mode-footer')).toHaveCount(0);
+  await expect(page.locator('.shoe-fingerprint')).not.toBeVisible();
+  await expect(page.locator('.shoe-fingerprint code')).toHaveText(/^[0-9a-f]{64}$/);
   const fingerprint = await page.locator('.shoe-fingerprint').getAttribute('title');
   await expect(page.locator('.match-heading small')).toContainText('HAND 1', { timeout: 15000 });
   await expect(page.getByLabel('Your hand').getByRole('img')).toHaveCount(2); // Also true when a natural ends the hand at once.
@@ -37,11 +39,11 @@ test('a guest plays Blackjack hands from one shoe with two agents against the ho
     if (await actions.getAttribute('data-turn') === 'yours') await page.getByRole('button', { name: 'Stand', exact: true }).click();
   }
   await expect(actions).toHaveAttribute('data-turn', 'result', { timeout: 20000 }); // Agents play after you.
-  await expect(page.getByLabel('Blackjack hands').locator('.player-card')).toHaveCount(4); // Dealer + you + two agents.
+  await expect(page.getByLabel('Blackjack hands').locator('.player-card')).toHaveCount(2); // Opponents only; your hand and dealer are in the action panel.
   await expect(page.getByLabel('Dealer hand').getByRole('img', { name: 'Face-down card' })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2 }).first()).toHaveText(/You win!|Dealer wins|Push|Blackjack!/);
   await expect(page.locator('.match-heading small')).toContainText('HAND 1');
-  await expect(page.locator('.hand-tally').first()).toHaveText(/^[01]W [01]L [01]P$/);
+  await expect(page.locator('.hand-tally')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('blackjack.png') });
 
   // The next hand is dealt automatically from the same shoe after the result pause.
@@ -49,5 +51,10 @@ test('a guest plays Blackjack hands from one shoe with two agents against the ho
   await expect(page.getByRole('button', { name: 'Back to lobby', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Your hand').getByRole('img')).toHaveCount(2);
   expect(await page.locator('.shoe-fingerprint').getAttribute('title')).toBe(fingerprint); // Same shoe, same commitment.
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByText('Card verification', { exact: true }).click();
+  await expect(page.locator('.shoe-fingerprint')).toBeVisible();
+  await page.getByRole('button', { name: 'Back to table', exact: true }).click();
+  await expect(page.locator('.shoe-fingerprint')).not.toBeVisible();
   expect(errors).toEqual([]);
 });

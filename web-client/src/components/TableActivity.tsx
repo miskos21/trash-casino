@@ -1,17 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { PublicGameState, PublicGameEvent, DICE_REVEAL } from '@raccoon-royale/shared-schemas/types';
 import { DieFace } from './DieFace';
 
-function useWideLayout() {
-  const [wide, setWide] = useState(() => matchMedia('(min-width:1100px)').matches);
-  useEffect(() => {
-    const query = matchMedia('(min-width:1100px)');
-    const update = () => setWide(query.matches);
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  }, []);
-  return wide;
-}
 function EventRow({ event, name }: { event: PublicGameEvent; name: (id: string | null) => string }) {
   return <li className={'activity-event event-' + event.type.toLowerCase()} data-event-type={event.type}>
     <span className="event-round">R{event.round}</span>
@@ -21,6 +11,7 @@ function EventRow({ event, name }: { event: PublicGameEvent; name: (id: string |
       {event.type === 'ROUND_RESULT' && <><strong>{name(event.loserId)} lost a die</strong><span>{event.actualCount} matching · claim was {event.bid?.quantity} × {event.bid?.face}</span></>}
       {event.type === 'ROUND_START' && <><strong>Round {event.round}</strong><span>{name(event.actorId)} starts</span></>}
       {event.type === 'GAME_OVER' && <><strong>{name(event.actorId)} wins</strong><span>Last player with dice</span></>}
+      {event.type === 'PLAYER_LEFT' && <><strong>{name(event.actorId)} left the match</strong><span>All their dice are forfeited. Any open claim is cancelled.</span></>}
       {event.cause === 'TIMEOUT' && <small>Automatic · turn timed out</small>}
       {event.cause === 'UNAVAILABLE' && <small>Automatic · player unavailable</small>}
       {event.cause === 'NPC' && event.type !== 'ROUND_RESULT' && <small>NPC move</small>}
@@ -31,9 +22,7 @@ function EventRow({ event, name }: { event: PublicGameEvent; name: (id: string |
 export function TableActivity({ state, reveal, revealActive }: {
   state: PublicGameState; reveal: DICE_REVEAL['payload'] | null; revealActive: boolean;
 }) {
-  const wide = useWideLayout();
-  const [open, setOpen] = useState<boolean | null>(null);
-  const expanded = open ?? wide;
+  const [expanded, setOpen] = useState(false);
   const name = (id: string | null) => state.participants.find((p) => p.playerId === id)?.displayName ?? 'Player';
   const currentReveal = reveal?.matchId === state.matchId ? reveal : null;
   const history = [...(state.history ?? [])].filter((event) => !(revealActive && currentReveal && event.round > currentReveal.round)).reverse();

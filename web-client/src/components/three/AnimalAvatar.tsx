@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import type { Group } from 'three';
+import { CatmullRomCurve3, Color, Float32BufferAttribute, TubeGeometry, Vector3, type Group, type Mesh } from 'three';
 import type { Avatar } from '@raccoon-royale/shared-schemas/types';
 
 const palettes: Record<Avatar, { fur: string; light: string; mask: string }> = {
@@ -12,18 +12,43 @@ const palettes: Record<Avatar, { fur: string; light: string; mask: string }> = {
   FROG: { fur: '#6f8a3a', light: '#d9d29a', mask: '#22301a' },
 };
 
-export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?: Avatar; animated?: boolean }) {
+// A tapered, curved brush with a cream tip; shared geometry keeps the low-poly tail inexpensive.
+const foxTailCurve = new CatmullRomCurve3([
+  new Vector3(0, 0.26, -0.22), new Vector3(0.08, 0.26, -0.45), new Vector3(0.3, 0.32, -0.73),
+  new Vector3(0.48, 0.5, -0.99), new Vector3(0.49, 0.75, -1.13), new Vector3(0.36, 0.96, -1.16),
+]);
+const foxTail = new TubeGeometry(foxTailCurve, 24, 1, 8, false);
+const tailPoints = foxTail.getAttribute('position'), tailColors: number[] = [];
+const fur = new Color(palettes.FOX.fur), tip = new Color('#fff0d5');
+for (let i = 0; i < tailPoints.count; i++) {
+  const progress = Math.floor(i / 9) / 24;
+  const center = foxTailCurve.getPointAt(progress);
+  const radius = Math.max(0.012, (0.085 + 0.24 * Math.sin(Math.PI * progress) ** 0.8) * (1 - progress ** 8));
+  const point = new Vector3().fromBufferAttribute(tailPoints, i).sub(center).multiplyScalar(radius).add(center);
+  tailPoints.setXYZ(i, point.x, point.y, point.z);
+  const color = progress >= 0.72 ? tip : fur;
+  tailColors.push(color.r, color.g, color.b);
+}
+foxTail.setAttribute('color', new Float32BufferAttribute(tailColors, 3));
+foxTail.computeVertexNormals();
+
+export function AnimalAvatar({ animal = 'RACCOON', animated = true, formal = false, showArms = true }: { animal?: Avatar; animated?: boolean; formal?: boolean; showArms?: boolean }) {
   const group = useRef<Group>(null);
+  const tail = useRef<Mesh>(null);
   const colors = palettes[animal];
   const capybara = animal === 'CAPYBARA';
   const cat = animal === 'CAT';
   const frog = animal === 'FROG';
   useFrame(({ clock }) => {
     if (animated && group.current) group.current.rotation.z = Math.sin(clock.elapsedTime * 1.4) * 0.025;
+    if (animated && tail.current) tail.current.rotation.y = Math.sin(clock.elapsedTime * 1.8) * 0.12;
   });
   return <group ref={group}>
+    {animal === 'FOX' && <mesh ref={tail} geometry={foxTail} castShadow receiveShadow dispose={null}>
+      <meshStandardMaterial vertexColors flatShading roughness={0.9} />
+    </mesh>}
     <mesh position={[0, frog ? 0.5 : 0.55, 0]} castShadow scale={frog ? [0.5, 0.5, 0.38] : [0.43, 0.58, 0.35]}>
-      <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={colors.fur} flatShading />
+      <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={formal ? '#202a36' : colors.fur} flatShading />
     </mesh>
     <mesh position={[0, frog ? 1.12 : 1.18, 0]} castShadow scale={capybara ? [0.37, 0.43, 0.46] : frog ? [0.52, 0.34, 0.42] : [0.48, 0.42, 0.4]}>
       <icosahedronGeometry args={[1, capybara ? 0 : 1]} /><meshStandardMaterial color={colors.fur} flatShading />
@@ -65,9 +90,13 @@ export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?:
           <sphereGeometry args={[0.045, 8, 6]} /><meshStandardMaterial color="#121b18" roughness={0.25} />
         </mesh>}
       </>}
-      <mesh position={[side * 0.36, 0.65, 0.28]} rotation={[0.5, 0, side * -0.4]} castShadow>
-        <capsuleGeometry args={[0.12, 0.35, 3, 6]} /><meshStandardMaterial color={colors.fur} />
+      {showArms && <><mesh position={[side * 0.36, 0.65, 0.28]} rotation={[formal ? -0.75 : 0.5, 0, side * -0.4]} castShadow>
+        <capsuleGeometry args={[0.12, 0.35, 3, 6]} /><meshStandardMaterial color={formal ? '#202a36' : colors.fur} />
       </mesh>
+      {formal && <mesh position={[side * 0.43, 0.49, 0.5]} scale={[0.12, 0.08, 0.16]} castShadow>
+        <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color="#f4f0e5" roughness={0.85} />
+      </mesh>}
+      </>}
     </group>)}
     {capybara ? <>
       <mesh position={[0, 1.08, 0.37]} rotation={[0.12, 0, 0]} castShadow>

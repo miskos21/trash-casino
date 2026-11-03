@@ -1,5 +1,5 @@
-export function CasinoTable() {
-  return <group>
+export function CasinoTable({ size = 1 }: { size?: number }) {
+  return <group scale={[size, 1, size]}>
     <mesh position={[0, 1.1, 0]} scale={[1.45, 1, 1]} castShadow receiveShadow>
       <cylinderGeometry args={[2, 1.9, 0.25, 48]} /><meshStandardMaterial color="#785039" roughness={0.8} />
     </mesh>

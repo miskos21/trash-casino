@@ -13,6 +13,65 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 class RoomServiceTest {
+    @Test void disconnectIsVisibleAndReconnectRestoresOnlyThatSeat() throws Exception {
+        var host = new Guest(); host.create(); var guest = new Guest(); guest.join(host);
+        host.ready(); guest.ready(); host.start();
+        var dice = guest.last("GAME_STATE").path("ownDice");
+        rooms.disconnected(guest.socket);
+        var absent = host.last("ROOM_STATE").path("participants").get(1);
+        assertFalse(absent.path("connected").asBoolean());
+        assertEquals("DISCONNECTED", absent.path("presence").asText());
+        var replacement = new Guest();
+        replacement.send("PLAYER_RECONNECT", Map.of("roomId", guest.roomId(), "resumeToken", guest.last("ROOM_SESSION").path("resumeToken").asText()));
+        assertEquals("ONLINE", host.last("ROOM_STATE").path("participants").get(1).path("presence").asText());
+        assertEquals(dice, replacement.last("GAME_STATE").path("ownDice"));
+    }
+
+    @Test void explicitLeaveIsAcknowledgedForfeitsDiceAndRevokesRecovery() throws Exception {
+        var host = new Guest(); host.create(); var guest = new Guest(); guest.join(host);
+        host.ready(); guest.ready(); host.start();
+        String token = guest.last("ROOM_SESSION").path("resumeToken").asText();
+        String room = guest.roomId();
+        guest.send("ROOM_LEAVE", Map.of("roomId", room), "leave-once");
+        assertEquals(room, guest.last("ROOM_LEFT").path("roomId").asText());
+        assertEquals("LEFT", host.last("ROOM_STATE").path("participants").get(1).path("presence").asText());
+        assertEquals(0, host.last("GAME_STATE").path("publicState").path("participants").get(1).path("diceCount").asInt());
+        guest.send("ROOM_LEAVE", Map.of("roomId", room), "leave-once");
+        assertEquals(room, guest.last("ROOM_LEFT").path("roomId").asText());
+        var replacement = new Guest(); replacement.send("PLAYER_RECONNECT", Map.of("roomId", room, "resumeToken", token));
+        assertEquals("INVALID_SESSION", replacement.last("ERROR").path("code").asText());
+        guest.send("PLAYER_BID", host.bid(1, 1, 1));
+        assertEquals("INVALID_SESSION", guest.last("ERROR").path("code").asText());
+    }
+
+    @Test void leavingTwoPlayerMatchAwardsRemainingPlayerWithoutWaitingForTimeouts() throws Exception {
+        var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "CAT", "agents", 0));
+        var guest = new Guest(); guest.join(host); host.ready(); guest.ready(); host.start();
+        guest.send("ROOM_LEAVE", Map.of("roomId", guest.roomId()));
+        assertEquals("FINISHED", host.last("ROOM_STATE").path("phase").asText());
+        assertEquals(host.id(), host.last("GAME_RESULT").path("winnerId").asText());
+    }
+
+    @Test void blackjackDepartureDoesNotKeepPlayingNewHandsAndCannotJoinMidShoe() throws Exception {
+        var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "CAT", "game", "BLACKJACK", "agents", 0));
+        var guest = new Guest(); guest.join(host); host.ready(); guest.ready(); host.start();
+        guest.send("ROOM_LEAVE", Map.of("roomId", guest.roomId())); // During the shuffle.
+        rooms.tick();
+        assertEquals(1, host.last("BLACKJACK_STATE").path("players").size());
+        assertEquals(host.id(), host.last("BLACKJACK_STATE").path("players").get(0).path("playerId").asText());
+        var stranger = new Guest(); stranger.join(host);
+        assertEquals("ROOM_STARTED", stranger.last("ERROR").path("code").asText());
+    }
+
+    @Test void heartbeatTimeoutClosesHalfOpenSocketButAllowsGuestRecovery() throws Exception {
+        var host = new Guest(); host.create();
+        rooms.expireConnections(System.currentTimeMillis() + 45_001);
+        verify(host.socket).close(org.springframework.web.socket.CloseStatus.SESSION_NOT_RELIABLE);
+        var replacement = new Guest();
+        replacement.send("PLAYER_RECONNECT", Map.of("roomId", host.roomId(), "resumeToken", host.last("ROOM_SESSION").path("resumeToken").asText()));
+        assertEquals(host.id(), replacement.id());
+        assertEquals("ONLINE", replacement.last("ROOM_STATE").path("participants").get(0).path("presence").asText());
+    }
     ObjectMapper mapper = new ObjectMapper();
     Protocol protocol;
     RoomService rooms;

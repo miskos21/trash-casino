@@ -85,3 +85,7 @@ permissions, valid agreement states, and spending bounds. Non-bid proposals use
 decimal string of at most 39 digits, with u128 maximum and budget checks required
 in the consuming service. `SUCCEEDED` and `CONFIRMED` must only be emitted after
 final successful on-chain execution.
+
+Room seats expose `presence` (`ONLINE`, `DISCONNECTED`, `LEFT`) alongside `connected`.
+`ROOM_LEFT` acknowledges a validated `ROOM_LEAVE`; clients clear guest recovery only
+after this reply. Clients send PING heartbeats while connected.

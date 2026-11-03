@@ -19,6 +19,10 @@ class Peer {
   constructor() {
     peers.push(this);
     this.ws = new WebSocket(base);
+    this.heartbeat = setInterval(() => {
+      if (this.ws.readyState === WebSocket.OPEN) this.send('PING', {});
+    }, 10000);
+    this.ws.onclose = () => clearInterval(this.heartbeat);
     this.ws.onmessage = ({ data }) => {
       try {
         const value = JSON.parse(data);
@@ -116,5 +120,5 @@ try {
   guest.send('ROOM_LEAVE', { roomId });
   await delay(100);
 } finally {
-  for (const peer of peers) peer.ws.close();
+  for (const peer of peers) { clearInterval(peer.heartbeat); peer.ws.close(); }
 }

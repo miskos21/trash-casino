@@ -31,12 +31,14 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   await expect(guest.locator('.die-face')).toHaveCount(5);
   await expect(page.getByLabel('Game actions')).toHaveAttribute('data-turn', 'yours');
   await expect(guest.getByLabel('Game actions')).toHaveAttribute('data-turn', 'waiting');
-  await expect(page.getByText('FREE MATCH · NO BUY-IN · NO TOKEN REWARD', { exact: true })).toBeVisible();
+  await expect(page.locator('.match-mode-footer, .claim-explanation')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await page.getByRole('button', { name: 'How to play', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'How Liar’s Dice works' })).toBeVisible();
   await expect(page.getByText(/No buy-in, no tokens at risk, no token reward/)).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).not.toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'How Liar’s Dice works' })).not.toBeVisible();
+  await page.getByRole('button', { name: 'Back to table', exact: true }).click();
   const ownDice = await guest.locator('.die-face').allTextContents();
   await guest.reload();
   await expect(guest.locator('.die-face')).toHaveCount(5);
@@ -83,7 +85,7 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   }
   await expect(page.locator('.match-heading h2')).toHaveText(/ wins!$/);
   await expect(guest.locator('.match-heading h2')).toHaveText(await page.locator('.match-heading h2').textContent() ?? '');
-  await expect(page.getByText('No buy-in. No tokens spent or awarded.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back to lobby', exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('match-result.png') });
   expect(errors).toEqual([]);
   for (const actor of [page, guest]) {

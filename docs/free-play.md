@@ -38,8 +38,11 @@ No mock LLM or blockchain responses exist. Unit tests mock only socket transport
 
 One Java instance owns in-memory rooms. Reconnect grace is two minutes when no
 other connected human keeps the room alive. After two minutes, disconnected seats
-become abandoned and fallback-play; lobby/finished abandoned seats are removed.
-Explicit leave marks a running seat abandoned immediately. Restarting Java loses
+forfeit their dice match or stop receiving future Blackjack hands; lobby/finished
+abandoned seats are removed. Explicit leave takes effect immediately after server
+validation and is acknowledged with `ROOM_LEFT`. Disconnections and departures
+are visible in the lobby, match HUD, and empty 3D seat. Heartbeats detect half-open
+connections within 45 seconds; a disconnect keeps a two-minute recovery window. Restarting Java loses
 the room and expires guest recovery. There is no cross-instance coordination.
 Sessions are not wallets and cannot authorize any future economic operation.
 The only REST endpoint remains health; gameplay uses the validated WebSocket.

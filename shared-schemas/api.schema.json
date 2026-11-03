@@ -1555,6 +1555,9 @@
         },
         {
           "$ref": "#/$defs/BLACKJACK_STATE"
+        },
+        {
+          "$ref": "#/$defs/ROOM_LEFT"
         }
       ]
     },
@@ -1585,6 +1588,14 @@
         },
         "connected": {
           "type": "boolean"
+        },
+        "presence": {
+          "type": "string",
+          "enum": [
+            "ONLINE",
+            "DISCONNECTED",
+            "LEFT"
+          ]
         }
       },
       "required": [
@@ -1593,7 +1604,8 @@
         "avatar",
         "npc",
         "ready",
-        "connected"
+        "connected",
+        "presence"
       ]
     },
     "RoomState": {
@@ -1783,7 +1795,8 @@
             "BID",
             "CALL_BLUFF",
             "ROUND_RESULT",
-            "GAME_OVER"
+            "GAME_OVER",
+            "PLAYER_LEFT"
           ]
         },
         "actorId": {
@@ -2293,6 +2306,46 @@
         "handStart",
         "commitment",
         "reveal"
+      ]
+    },
+    "ROOM_LEFT": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ROOM_LEFT"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roomId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "roomId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
       ]
     }
   }

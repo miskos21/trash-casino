@@ -8,6 +8,10 @@ import { BlackjackHud } from './components/BlackjackHud';
 import { avatars, type AvatarOption } from './avatars';
 import { GameIcon } from './components/GameIcon';
 import { MatchClockProvider } from './game/MatchClock';
+import { LeaveRoomButton } from './components/LeaveRoomButton';
+import { TablePresence } from './components/SeatPresence';
+import { ShoeDetails } from './components/ShoeDetails';
+import { GameRules } from './components/GameRules';
 
 class SceneBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -29,10 +33,16 @@ export function App() {
   const [fullscreen, setFullscreen] = useState(false);
   const [notice, setNotice] = useState('');
   const menu = useRef<HTMLDialogElement>(null);
+  const previousRoom = useRef<string | undefined>(undefined);
   const myAvatar = status.room?.participants.find((p) => p.playerId === status.room?.youId)?.avatar ?? avatar;
   const selected = avatars.find((option) => option.id === myAvatar)!;
   const connection = status.health === 'online' && status.socket === 'online' ? 'online'
     : status.health === 'checking' || status.socket === 'checking' ? 'checking' : 'offline';
+
+  useEffect(() => {
+    if (previousRoom.current && !status.room) setMenuOpen(false);
+    previousRoom.current = status.room?.roomId;
+  }, [status.room?.roomId]);
 
   useEffect(() => {
     if (status.game?.publicState.matchId || status.blackjack?.matchId) setCamera((previous) => ({ view: 'table', revision: previous.revision + 1 }));
@@ -72,24 +82,25 @@ export function App() {
     } catch { setNotice('Fullscreen is unavailable. Use your browser’s fullscreen control.'); }
   }
 
-  return <MatchClockProvider active={status.game?.publicState.phase === 'IN_PROGRESS' || status.blackjack?.phase === 'IN_PROGRESS'}><main className="game-shell" aria-label="Raccoon Royale game">
+  return <MatchClockProvider active={status.game?.publicState.phase === 'IN_PROGRESS' || status.blackjack?.phase === 'IN_PROGRESS'}><main className="game-shell" aria-label="Trashnino game">
     <div className="game-scene" aria-label="3D casino table">
       <SceneBoundary><TableScene avatar={myAvatar} room={status.room} game={status.game} blackjack={status.blackjack} reveal={status.reveal} cameraView={camera.view} cameraRevision={camera.revision} /></SceneBoundary>
     </div>
     <div className="game-vignette" aria-hidden="true" />
 
     <header className="game-header">
-      <div className="game-brand"><span className="brand-monogram">RR</span><span>RACCOON<br />ROYALE</span></div>
+      <div className="game-brand"><span className="brand-monogram">T</span><span>TRASHNINO</span></div>
       <div className="header-actions">
-        <button className="play-trigger" onClick={() => setMenuOpen(true)}>{status.room ? status.room.roomCode : 'Play'}</button>
         <button className="connection-indicator" data-connection={connection}
           aria-label={'Connection ' + connection + '. Open menu'} onClick={() => setMenuOpen(true)} title={'Connection ' + connection}>
           <span className="status-dot" /><span className="sr-only">{connection}</span>
         </button>
         <button className="hud-button menu-trigger" aria-label="Open menu" aria-haspopup="dialog" aria-expanded={menuOpen}
-          onClick={() => setMenuOpen(true)}><GameIcon name="menu" /><span>Menu</span></button>
+          onClick={() => setMenuOpen(true)}><GameIcon name="menu" /><span>{status.room ? 'Room & players' : 'Play & character'}</span></button>
+        {status.room && <LeaveRoomButton connection={status} />}
       </div>
     </header>
+    <TablePresence room={status.room} />
 
     {status.room?.game === 'BLACKJACK' ? <BlackjackHud connection={status} onMenu={() => setMenuOpen(true)} />
       : <MatchHud connection={status} onMenu={() => setMenuOpen(true)} />}
@@ -111,13 +122,13 @@ export function App() {
       </button>
     </nav>
 
-    <p className="testnet-notice">NEAR TESTNET <span>·</span> TRASH has no real-world value.</p>
+    {!status.room && <p className="testnet-notice">NEAR TESTNET <span>·</span> TRASH has no real-world value.</p>}
     {notice && <button className="game-notice" role="status" onClick={() => setNotice('')}>{notice}</button>}
 
     <dialog ref={menu} className="game-menu" aria-labelledby="menu-heading" onClose={() => setMenuOpen(false)}
       onClick={(event) => { if (event.target === menu.current) setMenuOpen(false); }}>
       <div className="menu-card">
-        <div className="menu-heading"><div><p className="menu-kicker">RACCOON ROYALE</p><h1 id="menu-heading">Menu</h1></div>
+        <div className="menu-heading"><div><p className="menu-kicker">TRASHNINO</p><h1 id="menu-heading">{status.room ? 'Your room' : 'Play Trashnino'}</h1></div>
           <button className="hud-button" aria-label="Close menu" onClick={() => setMenuOpen(false)}><GameIcon name="close" /></button>
         </div>
         <h2>Choose your character</h2>
@@ -127,8 +138,10 @@ export function App() {
             <Portrait animal={option} /><span>{option.name}</span><span className="selection-mark" aria-hidden="true">✓</span>
           </button>)}
         </div>
-        <button className="resume-button" onClick={() => setMenuOpen(false)}>Back to table <GameIcon name="chevron" /></button>
         <RoomLobby connection={status} avatar={avatar} onStarted={() => setMenuOpen(false)} />
+        {status.room && <div className="menu-help"><GameRules game={status.room.game} /></div>}
+        {status.blackjack && <ShoeDetails connection={status} />}
+        <button className="secondary-button back-to-table" onClick={() => setMenuOpen(false)}>Back to table <GameIcon name="chevron" /></button>
         <details className="menu-details"><summary>Controls</summary><p>Drag to orbit all the way around the table. Scroll or pinch to zoom. Use My character to see your animal’s face. Esc opens or closes this menu.</p></details>
         <details className="menu-details"><summary>Connection</summary>
           <div className="connection-status" aria-live="polite">
@@ -137,7 +150,7 @@ export function App() {
             <button className="retry" onClick={status.retry}>Check connection again</button>
           </div>
         </details>
-        <p className="menu-fine-print">Testnet only. No real-money purchases or cashouts. Server-controlled dice, cards, and outcomes; no provably fair randomness claim.</p>
+        <p className="menu-fine-print">NEAR Testnet. TRASH has no real-world value. No real-money purchases or cashouts. Server-controlled dice, cards, and outcomes; no provably fair randomness claim.</p>
       </div>
     </dialog>
   </main></MatchClockProvider>;

@@ -103,7 +103,27 @@ button:disabled { opacity: 0.45; }
 .lobby-seats { padding: 0; list-style: none; font-size: 12px; margin: 18px 0; }
 .lobby-seats li { display: flex; justify-content: space-between; gap: 12px; margin: 12px 0; }
 .lobby-seats small { color: #b6c99e; font-size: 10px; }
-.leave-button { border: 0; background: transparent; padding: 12px 0 0; color: #ddaa8e; font-size: 11px; }
+.leave-button { display: inline-flex; justify-content: center; align-items: center; min-height: 48px; padding: 12px 22px; border: 1px solid #f18c82; border-radius: 8px; background: #a52f32; color: #fff4ef; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.leave-button:hover:not(:disabled) { background: #c33d40; }
+.room-lobby > .leave-button { width: 100%; margin-top: 20px; min-height: 54px; }
+.back-to-table { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+.back-to-table svg { width: 15px; height: 15px; }
+.table-presence { position: absolute; left: 50%; transform: translateX(-50%); top: 122px; width: min(400px, calc(100vw - 580px)); z-index: 13; pointer-events: none; }
+.table-presence:empty { display: none; }
+.table-presence p { margin: 0 0 8px; padding: 12px 15px; border: 1px solid #ec9e77; border-radius: 8px; background: #37271ff5; color: #ffdbc2; font-size: 12px; }
+.seat-presence { display: block; color: #ffc096 !important; font-weight: 700; }
+.player-card[data-presence="LEFT"] > img, .player-card[data-presence="DISCONNECTED"] > img { filter: grayscale(1); opacity: 0.5; }
+.player-card[data-presence="LEFT"], .player-card[data-presence="DISCONNECTED"] { border-style: dashed; border-color: #c68b73; }
+@media (max-width: 650px) {
+  .game-brand { gap: 5px; }
+  .game-brand > span:last-child { font-size: 9px; letter-spacing: 0.06em; }
+  .menu-trigger > span { display: inline; }
+  .menu-trigger { gap: 5px; padding: 0 8px; font-size: 10px; }
+  .menu-trigger svg { width: 15px; height: 15px; }
+  .header-actions { gap: 3px; }
+  .header-actions .leave-button { padding: 10px; min-height: 44px; font-size: 12px; }
+  .connection-indicator { width: 18px; }
+}
 /* Match information is deliberately opaque and separate from the 3D camera. */
 .match-heading { position: absolute; z-index: 10; top: 18px; left: 50%; transform: translateX(-50%); width: min(490px, calc(100vw - 390px)); padding: 12px 22px; border: 1px solid #8fa07850; border-radius: 12px; text-align: center; background: #13231ef2; pointer-events: none; box-shadow: 0 6px 24px #0b171745; }
 .match-heading.is-your-turn { border-color: #e0bb70; background: #35402af5; }
@@ -166,6 +186,8 @@ button:disabled { opacity: 0.45; }
 .dealer-mark { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 7px; background: #7c2f2a; color: #f4ecd8; font-size: 22px; flex-shrink: 0; }
 .shoe-fingerprint { grid-column: 1 / -1; margin: 0 0 10px; font-size: 10px; color: #a9b79b; }
 .shoe-fingerprint code { color: #e0c48a; font-size: 10px; }
+.menu-details .shoe-fingerprint { overflow-wrap: anywhere; margin: 0 0 14px; line-height: 1.7; }
+.menu-help { margin: 12px 0; }
 .shoe-verdict { grid-column: 1 / -1; margin: 0 0 10px; padding: 9px 11px; border-radius: 8px; background: #1c2f27; font-size: 11px; color: #c4ceb7; }
 .shoe-verdict.verified { border-left: 3px solid #8fc27a; }
 .shoe-verdict.mismatch { border-left: 3px solid #e0735c; background: #3a1f1a; }
@@ -199,6 +221,8 @@ button:disabled { opacity: 0.45; }
 .rules-content li { padding: 5px 0 5px 5px; }
 .rules-content > p:not(.free-match-explainer) { font-size: 11px; color: #bbcaab; line-height: 1.6; }
 .table-activity { position: absolute; z-index: 12; right: 20px; top: 112px; width: 275px; max-height: calc(100dvh - 155px); padding: 14px; border-radius: 10px; border: 1px solid #9aab7959; background: #11221ef5; overflow: auto; }
+.table-activity:not([data-expanded="true"]) { width: auto; padding: 7px 10px; }
+.table-activity:not([data-expanded="true"]) h3 { display: none; }
 .table-activity > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .table-activity h3 { font-size: 12px; font-weight: 600; margin: 0; color: #e9d5a8; }
 .activity-toggle { display: block; border: 0; background: transparent; color: #d9bd86; font-size: 10px; padding: 4px; }
@@ -228,6 +252,8 @@ button:disabled { opacity: 0.45; }
   .player-card > img { width: 32px; height: 32px; }
 }
 @media(max-width:800px) {
+  .table-presence { top: 272px; width: calc(100vw - 28px); }
+  .game-shell:has(.table-presence p) .table-activity { top: 350px; }
   .match-heading { top: 75px; width: calc(100vw - 28px); padding: 8px 14px; }
   .match-heading h2 { font-size: 24px; margin: 3px 0; }
   .match-heading p { font-size: 10px; }
@@ -277,4 +303,43 @@ button:disabled { opacity: 0.45; }
 }
 @media(prefers-reduced-motion:no-preference) {
   .match-heading, .match-actions { transition: border-color 180ms, background-color 180ms; }
+}
+
+/* Keep the table clear: one turn heading, cards/dice, and the available actions. */
+.game-shell:has(.match-actions) .character-trigger,
+.game-shell:has(.match-actions) .toolbar-divider,
+.game-shell:has(.match-actions) .camera-button > span { display: none; }
+.game-shell:has(.match-actions) .game-toolbar { left: auto; right: 20px; bottom: 20px; transform: none; padding: 4px; gap: 2px; }
+.game-shell:has(.match-actions) .camera-button { min-width: 38px; padding: 0; }
+.match-heading { width: min(360px, calc(100vw - 540px)); padding: 9px 16px; }
+.match-heading h2 { font-size: 25px; margin-bottom: 0; }
+.match-actions { bottom: 24px; padding: 10px 16px 14px; }
+.match-actions.is-your-turn { padding: 9px 15px 13px; }
+.action-turn-line { border: 0; padding-bottom: 0; min-height: 16px; }
+.action-turn-line:empty { display: none; }
+.action-turn-line > span { margin-left: auto; font-size: 11px; }
+.card-row { padding: 5px 0 12px; }
+.blackjack-controls button { min-height: 46px; }
+.match-seats:empty { display: none; }
+@media (max-width: 1099px) and (min-width: 801px) {
+  .match-heading { top: 80px; width: 330px; }
+}
+@media (max-width: 800px) {
+  .match-heading { top: 75px; width: min(330px, calc(100vw - 28px)); padding: 8px 12px; }
+  .match-heading h2 { font-size: 22px; }
+  .match-seats { top: 154px; }
+  .match-actions { bottom: 78px; padding: 8px 12px 12px; }
+  .match-actions.is-your-turn { padding: 7px 11px 11px; }
+  .game-shell:has(.match-actions) .game-toolbar { right: 14px; bottom: 14px; }
+}
+
+/* The HUD uses the same engraved vector deck as the physical cards on the felt. */
+.playing-card { display: inline-block; width: 54px; height: 76px; padding: 0; border: 0; border-radius: 5px; background: transparent; box-shadow: 0 2px 3px #0005, 0 6px 14px #0002; overflow: hidden; line-height: 0; }
+.playing-card > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.playing-card.card-back { background: transparent; border: 0; }
+.playing-card.small-card { width: 28px; height: 40px; padding: 0; }
+.card-row > div { gap: 7px; }
+@media (max-width: 800px) {
+  .playing-card { width: 43px; height: 61px; }
+  .card-row > div { gap: 4px; }
 }

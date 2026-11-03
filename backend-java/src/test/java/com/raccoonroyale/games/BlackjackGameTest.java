@@ -10,6 +10,34 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class BlackjackGameTest {
+    @Test void departureSkipsTheTurnAndStopsFutureDealsWithoutReorderingTheShoe() {
+        var order = shoe("10", "9", "10", "7", "8", "7", "10", "10", "8", "7", "4", "5", "6", "7");
+        var game = new BlackjackGame(List.of("p1", "p2"), order, 0);
+        game.nextHand();
+        assertEquals("p1", game.publicState().currentPlayerId());
+        var firstCards = hand(game, "p1").cards();
+        game.leave("p1");
+        assertEquals("p2", game.publicState().currentPlayerId());
+        assertEquals(firstCards, hand(game, "p1").cards());
+        assertThrows(IllegalArgumentException.class, () -> game.apply("p1", Action.HIT));
+        game.apply("p2", Action.STAND);
+        assertEquals(2, game.publicState().players().size()); // Complete history remains verifiable.
+        int remaining = game.publicState().cardsRemaining();
+        String commitment = game.publicState().commitment();
+        game.nextHand();
+        assertEquals(List.of("p2"), game.publicState().players().stream().map(BlackjackGame.Hand::playerId).toList());
+        assertEquals(shoe("10", "8"), hand(game, "p2").cards());
+        assertEquals(remaining - 4, game.publicState().cardsRemaining());
+        assertEquals(commitment, game.publicState().commitment());
+    }
+
+    @Test void departureBeforeFirstDealDoesNotReceiveCards() {
+        var game = new BlackjackGame(List.of("p1", "p2"));
+        game.leave("p1");
+        game.nextHand();
+        assertEquals(List.of("p2"), game.publicState().players().stream().map(BlackjackGame.Hand::playerId).toList());
+        assertEquals(307, game.publicState().cardsRemaining());
+    }
     // Deal order: each player, then the dealer, twice. Later cards are hits and dealer draws.
     static List<Card> shoe(String... ranks) { return Arrays.stream(ranks).map(rank -> new Card(rank, "S")).toList(); }
     /** The shoe starts in the shuffle phase; deal hand 1 like the room does after the shuffle pause. */

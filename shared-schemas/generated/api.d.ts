@@ -64,7 +64,8 @@ export type ApiContract =
   | BLACKJACK_STAND
   | BLACKJACK_STATE
   | BlackjackTally
-  | BlackjackShoe;
+  | BlackjackShoe
+  | ROOM_LEFT;
 export type Identifier = string;
 /**
  * Exact base-unit integer string. Services must also enforce u128 and budget limits.
@@ -110,7 +111,8 @@ export type ServerMessage =
   | ERROR
   | ROOM_STATE
   | ROOM_SESSION
-  | BLACKJACK_STATE;
+  | BLACKJACK_STATE
+  | ROOM_LEFT;
 export type GameType = "LIARS_DICE" | "BLACKJACK";
 
 export interface Bid {
@@ -153,7 +155,7 @@ export interface PublicGameState {
 export interface PublicGameEvent {
   id: Identifier;
   round: number;
-  type: "ROUND_START" | "BID" | "CALL_BLUFF" | "ROUND_RESULT" | "GAME_OVER";
+  type: "ROUND_START" | "BID" | "CALL_BLUFF" | "ROUND_RESULT" | "GAME_OVER" | "PLAYER_LEFT";
   actorId: Identifier | null;
   bid: Bid | null;
   loserId: Identifier | null;
@@ -514,6 +516,7 @@ export interface RoomSeat {
   npc: boolean;
   ready: boolean;
   connected: boolean;
+  presence: "ONLINE" | "DISCONNECTED" | "LEFT";
 }
 export interface ROOM_SESSION {
   protocolVersion: 1;
@@ -650,5 +653,13 @@ export interface BlackjackShoe {
      * @maxItems 312
      */
     order: [Card, ...Card[]];
+  };
+}
+export interface ROOM_LEFT {
+  protocolVersion: 1;
+  type: "ROOM_LEFT";
+  requestId: Identifier | null;
+  payload: {
+    roomId: Identifier;
   };
 }

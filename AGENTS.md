@@ -1,4 +1,4 @@
-# Raccoon Royale
+# Trashnino
 
 Browser-based 3D casino party game on NEAR Testnet. Players sit at a table with
 animal avatars, play Liar's Dice against humans and LLM-powered NPCs, and try to

@@ -120,6 +120,24 @@ public final class LiarsDiceGame {
         return lastBid == null ? new Bid(1, 1) : new CallBluff();
     }
 
+    /** Explicit departure forfeits all dice. Cancel the open claim and roll a new round for the remaining seats. */
+    public synchronized void forfeit(String actor) {
+        requireParticipant(actor);
+        if (winner != null || dice.get(actor).isEmpty()) return;
+        dice.put(actor, List.of());
+        lastBid = null;
+        lastBidder = null;
+        var active = seats.stream().filter(id -> !dice.get(id).isEmpty()).toList();
+        if (active.size() == 1) {
+            winner = active.getFirst();
+            currentPlayer = null;
+        } else {
+            currentPlayer = nextActive(actor);
+            round++;
+            dice.replaceAll((id, values) -> roll(values.size()));
+        }
+    }
+
     private void requireParticipant(String id) {
         if (!dice.containsKey(id)) throw new IllegalArgumentException("Unknown participant");
     }

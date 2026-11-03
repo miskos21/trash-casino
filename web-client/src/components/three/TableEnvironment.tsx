@@ -3,7 +3,12 @@ import { useFrame } from '@react-three/fiber';
 import type { Group } from 'three';
 
 function WallLamp({ position, rotation = 0 }: { position: [number, number, number]; rotation?: number }) {
-  return <group position={position} rotation={[0, rotation, 0]}>
+  const fixture = useRef<Group>(null);
+  useFrame(({ camera }) => {
+    // Like the inward-facing walls, hide fixtures when the wider camera moves outside their wall.
+    if (fixture.current) fixture.current.visible = camera.position.z * Math.sign(position[2]) < Math.abs(position[2]);
+  });
+  return <group ref={fixture} position={position} rotation={[0, rotation, 0]}>
     <mesh position={[0, -0.13, 0]}><boxGeometry args={[0.12, 0.55, 0.16]} /><meshStandardMaterial color="#99804e" metalness={0.5} roughness={0.5} /></mesh>
     <mesh position={[0, 0.16, 0.16]}><cylinderGeometry args={[0.2, 0.31, 0.4, 8]} /><meshStandardMaterial color="#dec592" emissive="#dfad5c" emissiveIntensity={0.4} /></mesh>
     <pointLight position={[0, 0.1, 0.5]} color="#ffd08b" intensity={5} distance={7} decay={2} />
@@ -18,7 +23,7 @@ function Plant({ position }: { position: [number, number, number] }) {
   </group>;
 }
 
-export function TableEnvironment() {
+export function TableEnvironment({ tableSize = 1 }: { tableSize?: number }) {
   const shade = useRef<Group>(null);
   useFrame(({ camera }) => {
     // Keep overhead views of the playing surface clear; the light remains on.
@@ -30,8 +35,8 @@ export function TableEnvironment() {
     {Array.from({ length: 19 }, (_, i) => <mesh key={i} position={[-8.55 + i * 0.95, 0.003, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[0.92, 20]} /><meshStandardMaterial color={['#66503b', '#604a37', '#6b533d'][i % 3]} roughness={1} />
     </mesh>)}
-    <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[8.3, 9]} /><meshStandardMaterial color="#6d4938" roughness={1} /></mesh>
-    <mesh position={[0, 0.018, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[7.9, 8.6]} /><meshStandardMaterial color="#3e5040" roughness={1} /></mesh>
+    <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[8.3 * (tableSize > 1 ? 1.65 : 1), 9 * (tableSize > 1 ? 1.35 : 1)]} /><meshStandardMaterial color="#6d4938" roughness={1} /></mesh>
+    <mesh position={[0, 0.018, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[7.9 * (tableSize > 1 ? 1.65 : 1), 8.6 * (tableSize > 1 ? 1.35 : 1)]} /><meshStandardMaterial color="#3e5040" roughness={1} /></mesh>
     {[-1, 1].map((side) => <group key={side}>
       {/* Inward-facing walls never hide the table when the camera zooms outside the room. */}
       <mesh position={[0, 2.5, side * 9]} rotation={[0, side > 0 ? Math.PI : 0, 0]} receiveShadow><planeGeometry args={[18.2, 5]} /><meshStandardMaterial color="#344539" /></mesh>
@@ -60,7 +65,8 @@ export function TableEnvironment() {
     <group position={[0, 5.1, 0]}>
       <group ref={shade}>
       <mesh position={[0, 0.7, 0]}><cylinderGeometry args={[0.025, 0.025, 1.4, 6]} /><meshStandardMaterial color="#292c23" /></mesh>
-      <mesh castShadow><cylinderGeometry args={[0.32, 0.95, 0.5, 12, 1, true]} /><meshStandardMaterial color="#3d5844" side={2} metalness={0.2} roughness={0.6} /></mesh>
+      {/* This camera-dependent cutaway must not cast a key-light shadow that pops on the felt. */}
+      <mesh castShadow={false}><cylinderGeometry args={[0.32, 0.95, 0.5, 12, 1, true]} /><meshStandardMaterial color="#3d5844" side={2} metalness={0.2} roughness={0.6} /></mesh>
       <mesh position={[0, -0.24, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.95, 0.035, 6, 24]} /><meshStandardMaterial color="#b69353" /></mesh>
       <mesh position={[0, -0.22, 0]}><sphereGeometry args={[0.16, 8, 6]} /><meshStandardMaterial color="#ffe6ad" emissive="#ffcf7f" emissiveIntensity={1.5} /></mesh>
       </group>

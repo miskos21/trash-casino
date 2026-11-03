@@ -6,6 +6,23 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class LiarsDiceGameTest {
+    @Test void departureCancelsAnOpenClaimAndCannotTakeAnotherTurn() {
+        var game = new LiarsDiceGame(List.of("a", "b", "c"), () -> 2);
+        game.apply("a", new LiarsDiceGame.Bid(15, 6));
+        game.forfeit("a");
+        var state = game.viewFor("b").publicState();
+        assertEquals(0, state.diceCounts().get("a"));
+        assertNull(state.lastBid());
+        assertNull(state.lastBidderId());
+        assertEquals("b", state.currentPlayerId());
+        assertEquals(2, state.round());
+        assertThrows(IllegalArgumentException.class, () -> game.apply("a", new LiarsDiceGame.Bid(1, 1)));
+        game.forfeit("c");
+        assertEquals("b", game.viewFor("b").publicState().winnerId());
+        game.forfeit("c"); // A repeated departure cannot change the result.
+        assertEquals("b", game.viewFor("b").publicState().winnerId());
+        assertThrows(IllegalArgumentException.class, () -> game.forfeit("intruder"));
+    }
     private LiarsDiceGame game() { return new LiarsDiceGame(List.of("human", "npc"), () -> 2); }
 
     @Test void initialStateAndPrivateViewsAreImmutableAndIsolated() {

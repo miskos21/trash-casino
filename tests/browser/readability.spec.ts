@@ -57,7 +57,7 @@ test('four seats keep dice separate from cups and show a consistent public revea
     const own = lastReveal!.dice.find((p) => p.playerId === ownId)!.dice.map(String);
     expect(await page.locator('.die-face').allTextContents()).toEqual(own);
     await page.screenshot({ path: testInfo.outputPath('four-seat-reveal-overhead.png') });
-    await expect(page.locator('.private-dice > small')).toHaveText('Your private dice · round 2', { timeout: 10000 });
+    await expect(page.locator('.private-dice > small')).toHaveText('Your dice', { timeout: 10000 });
 
     await page.reload();
     const showMoves = page.getByRole('button', { name: 'Show moves', exact: true });
@@ -66,7 +66,7 @@ test('four seats keep dice separate from cups and show a consistent public revea
     await expect(page.locator('[data-event-type="ROUND_RESULT"]')).toHaveCount(1);
     expect(errors).toEqual([]);
     await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-    await page.getByRole('button', { name: 'Leave room', exact: true }).click();
+    await page.getByRole('button', { name: 'Leave match', exact: true }).click();
     for (const peer of peers) {
       const roomId = peer.messages.find((m) => m.type === 'ROOM_SESSION')!.payload.roomId;
       peer.send('ROOM_LEAVE', { roomId });
