@@ -1,16 +1,28 @@
 import { Canvas } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
 import { PCFShadowMap } from 'three';
-import type { Avatar } from '@raccoon-royale/shared-schemas/types';
+import type { Avatar, RoomState, PlayerGameState, DICE_REVEAL } from '@raccoon-royale/shared-schemas/types';
 import { CasinoTable } from '../components/three/CasinoTable';
 import { PlayerSeat } from '../components/three/PlayerSeat';
 import { DiceCup } from '../components/three/DiceCup';
 import { CameraController, type CameraView } from '../components/three/CameraController';
 import { TableEnvironment } from '../components/three/TableEnvironment';
+import { Dice } from '../components/three/Dice';
 
 export type { CameraView } from '../components/three/CameraController';
 
-export function TableScene({ avatar, cameraView, cameraRevision }: { avatar: Avatar; cameraView: CameraView; cameraRevision: number }) {
+export function TableScene({ avatar, room, game, reveal, cameraView, cameraRevision }: {
+  avatar: Avatar; room: RoomState | null; game: PlayerGameState | null;
+  reveal: DICE_REVEAL['payload'] | null; cameraView: CameraView; cameraRevision: number;
+}) {
+  const seats = room?.participants ?? [
+    { playerId: 'you', displayName: 'You', avatar, npc: false },
+    { playerId: 'don', displayName: 'Don Raccoone', avatar: 'RACCOON' as Avatar, npc: true },
+  ];
+  const ownIndex = room ? seats.findIndex((p) => p.playerId === room.youId) : 0;
+  const positions: [number, number, number][] = seats.length === 2 ? [[0, 0, 2.6], [0, 0, -2.6]]
+    : seats.length === 3 ? [[0, 0, 2.6], [-3.25, 0, -1.2], [3.25, 0, -1.2]]
+      : [[0, 0, 2.6], [-3.4, 0, 0], [0, 0, -2.6], [3.4, 0, 0]];
+  const publicReveal = reveal?.matchId === game?.publicState.matchId && (!game?.publicState.lastBid || game.publicState.phase === 'FINISHED');
   return <Canvas shadows={{ type: PCFShadowMap }} camera={{ position: [5.4, 4.7, 6.4], fov: 48, near: 0.1, far: 60 }} dpr={[1, 1.5]}
     fallback={<p className="scene-fallback">Enable WebGL to enter the table.</p>}>
     <color attach="background" args={['#1c241e']} />
@@ -21,12 +33,17 @@ export function TableScene({ avatar, cameraView, cameraRevision }: { avatar: Ava
       shadow-mapSize={[2048, 2048]} shadow-camera-left={-8} shadow-camera-right={8} shadow-camera-top={8} shadow-camera-bottom={-8} shadow-bias={-0.0005} />
     <TableEnvironment />
     <CasinoTable />
-    <PlayerSeat position={[0, 0, 2.6]} rotation={Math.PI} animal={avatar} />
-    <PlayerSeat position={[0, 0, -2.6]} rotation={0} animal="RACCOON" />
-    <Html position={[0, 2.35, -2.6]} center zIndexRange={[4, 0]} className="seat-nameplate"><span>DON RACCOONE</span></Html>
-    <Html position={[0, 2.35, 2.6]} center zIndexRange={[4, 0]} className="seat-nameplate"><span className="your-nameplate">YOU</span></Html>
-    <DiceCup position={[-0.5, 1.45, 1.2]} />
-    <DiceCup position={[0.5, 1.45, -1.2]} />
+    {seats.map((seat, index) => {
+      const relative = (index - ownIndex + seats.length) % seats.length;
+      const [x, , z] = positions[relative];
+      const values = publicReveal ? reveal?.dice.find((p) => p.playerId === seat.playerId)?.dice
+        : relative === 0 ? game?.ownDice : undefined;
+      return <group key={seat.playerId}>
+        <PlayerSeat position={[x, 0, z]} rotation={Math.atan2(-x, -z)} animal={seat.avatar} />
+        <DiceCup position={[x * 0.65 + 0.45, 1.45, z * 0.65]} />
+        {values?.map((value, i) => <Dice key={i} value={value} position={[x * 0.65 - 0.45 + i * 0.22, 1.34, z * 0.65 - 0.1]} />)}
+      </group>;
+    })}
     <CameraController view={cameraView} revision={cameraRevision} />
   </Canvas>;
 }

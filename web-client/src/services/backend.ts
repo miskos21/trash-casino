@@ -1,4 +1,6 @@
 import type { HealthResponse, ServerMessage, ClientMessage } from '@raccoon-royale/shared-schemas/types';
+import Ajv2020 from 'ajv/dist/2020';
+import schema from '@raccoon-royale/shared-schemas/api.schema.json';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,4 +38,13 @@ export async function checkHealth(signal: AbortSignal): Promise<HealthResponse> 
   const response = await fetch('/api/health', { signal });
   if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}`);
   return parseHealth(await response.json());
+}
+
+const ajv = new Ajv2020({ strict: true });
+ajv.addSchema(schema);
+const serverValidator = ajv.compile<ServerMessage>({ $ref: schema.$id + '#/$defs/ServerMessage' });
+export function parseServer(text: string): ServerMessage {
+  const value: unknown = JSON.parse(text);
+  if (!serverValidator(value)) throw new Error('Invalid server message');
+  return value;
 }

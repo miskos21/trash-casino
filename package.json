@@ -18,6 +18,7 @@
     "test": "npm test -w shared-schemas && npm test -w web-client",
     "build": "npm run schemas:check && npm run build -w web-client",
     "test:backend": "cd backend-java && ./mvnw test",
+    "test:game": "node scripts/game-smoke.mjs",
     "test:browser": "playwright test",
     "portraits:render": "node scripts/render-portraits.mjs"
   },

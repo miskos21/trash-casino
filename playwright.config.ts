@@ -5,7 +5,7 @@ export default defineConfig({
   testDir: './tests/browser',
   workers: 1,
   timeout: 30000,
-  use: { baseURL: 'http://localhost:5173', screenshot: 'only-on-failure' },
+  use: { baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173', screenshot: 'only-on-failure' },
   projects: [
     { name: 'desktop-chromium', use: { browserName: 'chromium', viewport: { width: 1280, height: 900 } } },
     { name: 'mobile-width-chromium', use: { browserName: 'chromium', viewport: { width: 390, height: 844 } } },

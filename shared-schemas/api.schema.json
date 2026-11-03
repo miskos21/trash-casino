@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raccoon-royale.invalid/schemas/api.v1.json",
   "title": "ApiContract",
-  "description": "Version 1 contracts. Only health and PING/PONG transport are implemented in milestone 1.",
+  "description": "Version 1 free-play rooms and game contracts. No wallet or chain operations.",
   "oneOf": [
     {
       "$ref": "#/$defs/ClientMessage"
@@ -151,6 +151,18 @@
               "type": "null"
             }
           ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deadlineEpochMillis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resumeAtEpochMillis": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "required": [
@@ -161,7 +173,10 @@
         "currentPlayerId",
         "lastBid",
         "lastBidderId",
-        "winnerId"
+        "winnerId",
+        "revision",
+        "deadlineEpochMillis",
+        "resumeAtEpochMillis"
       ]
     },
     "PlayerGameState": {
@@ -259,7 +274,17 @@
             "INVALID_MESSAGE",
             "NOT_IMPLEMENTED",
             "UNAUTHORIZED",
-            "NOT_FOUND"
+            "NOT_FOUND",
+            "ROOM_NOT_FOUND",
+            "ROOM_FULL",
+            "ROOM_STARTED",
+            "NOT_READY",
+            "NOT_HOST",
+            "ILLEGAL_ACTION",
+            "STALE_STATE",
+            "ALREADY_IN_ROOM",
+            "INVALID_SESSION",
+            "RATE_LIMITED"
           ]
         },
         "message": {
@@ -853,11 +878,16 @@
             },
             "bid": {
               "$ref": "#/$defs/Bid"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
             "matchId",
-            "bid"
+            "bid",
+            "expectedRevision"
           ]
         }
       },
@@ -894,10 +924,15 @@
           "properties": {
             "matchId": {
               "$ref": "#/$defs/Identifier"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
-            "matchId"
+            "matchId",
+            "expectedRevision"
           ]
         }
       },
@@ -1029,13 +1064,30 @@
             },
             "loserId": {
               "$ref": "#/$defs/Identifier"
+            },
+            "bidderId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "callerId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "bid": {
+              "$ref": "#/$defs/Bid"
+            },
+            "actualCount": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
             "matchId",
             "round",
             "dice",
-            "loserId"
+            "loserId",
+            "bidderId",
+            "callerId",
+            "bid",
+            "actualCount"
           ]
         }
       },
@@ -1313,10 +1365,14 @@
           "properties": {
             "roomId": {
               "$ref": "#/$defs/Identifier"
+            },
+            "resumeToken": {
+              "$ref": "#/$defs/ResumeToken"
             }
           },
           "required": [
-            "roomId"
+            "roomId",
+            "resumeToken"
           ]
         }
       },
@@ -1426,6 +1482,9 @@
         },
         {
           "$ref": "#/$defs/ROOM_LEAVE"
+        },
+        {
+          "$ref": "#/$defs/ROOM_START"
         }
       ]
     },
@@ -1463,7 +1522,217 @@
         },
         {
           "$ref": "#/$defs/ERROR"
+        },
+        {
+          "$ref": "#/$defs/ROOM_STATE"
+        },
+        {
+          "$ref": "#/$defs/ROOM_SESSION"
         }
+      ]
+    },
+    "ResumeToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "RoomSeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "playerId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "avatar": {
+          "$ref": "#/$defs/Avatar"
+        },
+        "npc": {
+          "type": "boolean"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "connected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "playerId",
+        "displayName",
+        "avatar",
+        "npc",
+        "ready",
+        "connected"
+      ]
+    },
+    "RoomState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roomId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "roomCode": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{6}$"
+        },
+        "phase": {
+          "enum": [
+            "LOBBY",
+            "IN_PROGRESS",
+            "FINISHED"
+          ]
+        },
+        "hostId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "youId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoomSeat"
+          },
+          "minItems": 2,
+          "maxItems": 4
+        }
+      },
+      "required": [
+        "roomId",
+        "roomCode",
+        "phase",
+        "hostId",
+        "youId",
+        "participants"
+      ]
+    },
+    "ROOM_STATE": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ROOM_STATE"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "$ref": "#/$defs/RoomState"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "ROOM_SESSION": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ROOM_SESSION"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roomId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "roomCode": {
+              "type": "string",
+              "pattern": "^[A-Z0-9]{6}$"
+            },
+            "playerId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "resumeToken": {
+              "$ref": "#/$defs/ResumeToken"
+            }
+          },
+          "required": [
+            "roomId",
+            "roomCode",
+            "playerId",
+            "resumeToken"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "ROOM_START": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ROOM_START"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roomId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "roomId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
       ]
     }
   }

@@ -26,17 +26,24 @@ Path: `/ws`, raw JSON text, no STOMP. Each message has required fields:
 
 Implemented: server sends `CONNECTED`; client sends `PING`; server replies `PONG`
 with the same request ID. Invalid messages receive `ERROR/INVALID_MESSAGE` with
-null request ID. Well-formed future client commands receive `ERROR/NOT_IMPLEMENTED`.
+null request ID. All non-PING commands require a non-null request ID. Exact
+duplicates are suppressed within a bounded socket cache. Gameplay commands
+also require `expectedRevision` to reject delayed/replayed turns.
 
-Reserved client commands: `ROOM_CREATE`, `ROOM_JOIN`, `ROOM_READY`, `PLAYER_BID`,
-`CALL_BLUFF`, `PLAYER_CHAT`, `PLAYER_RECONNECT`, `ROOM_LEAVE`.
+Implemented client commands: `ROOM_CREATE`, `ROOM_JOIN`, `ROOM_READY`, `ROOM_START`,
+`PLAYER_BID`, `CALL_BLUFF`, `PLAYER_RECONNECT`, `ROOM_LEAVE`. `PLAYER_CHAT` remains
+reserved and returns `NOT_IMPLEMENTED`.
 
-Reserved server events: `GAME_START`, `TURN`, `GAME_STATE`, `DICE_REVEAL`,
-`NPC_CHAT`, `AI_ACTION`, `GAME_RESULT`, `PLAYER_DISCONNECT`.
+Implemented events: `ROOM_SESSION`, `ROOM_STATE`, `GAME_START`, `GAME_STATE`,
+`DICE_REVEAL`, `GAME_RESULT`. Turn identity and timing are carried by `GAME_STATE`.
+`TURN`, `NPC_CHAT`, `AI_ACTION`, and `PLAYER_DISCONNECT` remain reserved.
 `GAME_STATE` is recipient-specific (`ownDice` plus public state). Never broadcast
 one recipient's complete snapshot to a room. `AI_ACTION` carries only public
-action metadata, not the LLM's private input or full proposal. Reconnect and
-disconnect schemas describe future lifecycle handling, not current support.
+action metadata, not the LLM's private input or full proposal. Reconnect requires
+the private `resumeToken` from `ROOM_SESSION`, never just a room or player ID.
+`ROOM_SESSION` is sent only to that seat; tokens must never enter room snapshots,
+LLM prompts, chat, or logs. Guest sessions are not wallet ownership proofs.
+`GAME_RESULT.settlement` is always `NOT_STARTED` in the free-play slice.
 
 ## REST
 

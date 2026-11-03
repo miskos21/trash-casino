@@ -1,7 +1,7 @@
 /* Generated from shared-schemas/api.schema.json. Run npm run schemas:generate. */
 
 /**
- * Version 1 contracts. Only health and PING/PONG transport are implemented in milestone 1.
+ * Version 1 free-play rooms and game contracts. No wallet or chain operations.
  */
 export type ApiContract =
   | Identifier
@@ -47,7 +47,13 @@ export type ApiContract =
   | ROOM_LEAVE
   | ERROR
   | ClientMessage
-  | ServerMessage;
+  | ServerMessage
+  | ResumeToken
+  | RoomSeat
+  | RoomState
+  | ROOM_STATE
+  | ROOM_SESSION
+  | ROOM_START;
 export type Identifier = string;
 /**
  * Exact base-unit integer string. Services must also enforce u128 and budget limits.
@@ -65,8 +71,18 @@ export type AgreementState =
   | "REFUNDED"
   | "REJECTED"
   | "EXPIRED";
+export type ResumeToken = string;
 export type ClientMessage =
-  PING | ROOM_CREATE | ROOM_JOIN | ROOM_READY | PLAYER_BID | CALL_BLUFF | PLAYER_CHAT | PLAYER_RECONNECT | ROOM_LEAVE;
+  | PING
+  | ROOM_CREATE
+  | ROOM_JOIN
+  | ROOM_READY
+  | PLAYER_BID
+  | CALL_BLUFF
+  | PLAYER_CHAT
+  | PLAYER_RECONNECT
+  | ROOM_LEAVE
+  | ROOM_START;
 export type ServerMessage =
   | PONG
   | CONNECTED
@@ -78,7 +94,9 @@ export type ServerMessage =
   | AI_ACTION
   | GAME_RESULT
   | PLAYER_DISCONNECT
-  | ERROR;
+  | ERROR
+  | ROOM_STATE
+  | ROOM_SESSION;
 
 export interface Bid {
   quantity: number;
@@ -107,6 +125,9 @@ export interface PublicGameState {
   lastBid: Bid | null;
   lastBidderId: Identifier | null;
   winnerId: Identifier | null;
+  revision: number;
+  deadlineEpochMillis: number;
+  resumeAtEpochMillis: number;
 }
 export interface PlayerGameState {
   publicState: PublicGameState;
@@ -143,7 +164,21 @@ export interface HealthResponse {
   protocolVersion: 1;
 }
 export interface ApiError {
-  code: "INVALID_MESSAGE" | "NOT_IMPLEMENTED" | "UNAUTHORIZED" | "NOT_FOUND";
+  code:
+    | "INVALID_MESSAGE"
+    | "NOT_IMPLEMENTED"
+    | "UNAUTHORIZED"
+    | "NOT_FOUND"
+    | "ROOM_NOT_FOUND"
+    | "ROOM_FULL"
+    | "ROOM_STARTED"
+    | "NOT_READY"
+    | "NOT_HOST"
+    | "ILLEGAL_ACTION"
+    | "STALE_STATE"
+    | "ALREADY_IN_ROOM"
+    | "INVALID_SESSION"
+    | "RATE_LIMITED";
   message: string;
 }
 export interface ChatRequest {
@@ -268,6 +303,7 @@ export interface PLAYER_BID {
   payload: {
     matchId: Identifier;
     bid: Bid;
+    expectedRevision: number;
   };
 }
 export interface CALL_BLUFF {
@@ -276,6 +312,7 @@ export interface CALL_BLUFF {
   requestId: Identifier | null;
   payload: {
     matchId: Identifier;
+    expectedRevision: number;
   };
 }
 export interface GAME_STATE {
@@ -310,6 +347,10 @@ export interface DICE_REVEAL {
       | [RevealedDice, RevealedDice, RevealedDice]
       | [RevealedDice, RevealedDice, RevealedDice, RevealedDice];
     loserId: Identifier;
+    bidderId: Identifier;
+    callerId: Identifier;
+    bid: Bid;
+    actualCount: number;
   };
 }
 export interface NPC_CHAT {
@@ -364,6 +405,7 @@ export interface PLAYER_RECONNECT {
   requestId: Identifier | null;
   payload: {
     roomId: Identifier;
+    resumeToken: ResumeToken;
   };
 }
 export interface ROOM_LEAVE {
@@ -379,4 +421,49 @@ export interface ERROR {
   type: "ERROR";
   requestId: Identifier | null;
   payload: ApiError;
+}
+export interface ROOM_START {
+  protocolVersion: 1;
+  type: "ROOM_START";
+  requestId: Identifier | null;
+  payload: {
+    roomId: Identifier;
+  };
+}
+export interface ROOM_STATE {
+  protocolVersion: 1;
+  type: "ROOM_STATE";
+  requestId: Identifier | null;
+  payload: RoomState;
+}
+export interface RoomState {
+  roomId: Identifier;
+  roomCode: string;
+  phase: "LOBBY" | "IN_PROGRESS" | "FINISHED";
+  hostId: Identifier;
+  youId: Identifier;
+  /**
+   * @minItems 2
+   * @maxItems 4
+   */
+  participants: [RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat, RoomSeat];
+}
+export interface RoomSeat {
+  playerId: Identifier;
+  displayName: string;
+  avatar: Avatar;
+  npc: boolean;
+  ready: boolean;
+  connected: boolean;
+}
+export interface ROOM_SESSION {
+  protocolVersion: 1;
+  type: "ROOM_SESSION";
+  requestId: Identifier | null;
+  payload: {
+    roomId: Identifier;
+    roomCode: string;
+    playerId: Identifier;
+    resumeToken: ResumeToken;
+  };
 }

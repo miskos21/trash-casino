@@ -64,7 +64,7 @@ class TransportIntegrationTest {
         } finally { socket.abort(); }
     }
 
-    @Test void roomsExplicitlyRemainUnimplemented() throws Exception {
+    @Test void roomsCreateServerIssuedGuestSessions() throws Exception {
         var inbox = new Inbox();
         var socket = connect(inbox);
         try {
@@ -72,9 +72,12 @@ class TransportIntegrationTest {
             socket.sendText("""
                 {"protocolVersion":1,"type":"ROOM_CREATE","requestId":"create-1","payload":{"displayName":"Judge","avatar":"RACCOON"}}
                 """, true).join();
-            var error = receive(inbox);
-            assertEquals("NOT_IMPLEMENTED", error.path("payload").path("code").asText());
-            assertEquals("create-1", error.path("requestId").asText());
+            var session = receive(inbox);
+            assertEquals("ROOM_SESSION", session.path("type").asText());
+            assertEquals(43, session.path("payload").path("resumeToken").asText().length());
+            var room = receive(inbox);
+            assertEquals("ROOM_STATE", room.path("type").asText());
+            assertEquals(2, room.path("payload").path("participants").size());
         } finally { socket.abort(); }
     }
 

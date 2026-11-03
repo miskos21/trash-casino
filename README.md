@@ -7,7 +7,7 @@ control what they can do.
 **NEAR Testnet only. TRASH has no real-world value.** No real-money purchases,
 real-value cashouts, mainnet operations, or deployment are included.
 
-## Milestone 1
+## Current free-play slice
 
 Implemented locally:
 
@@ -20,9 +20,13 @@ Implemented locally:
 - Shared JSON schemas, generated TypeScript declarations, validation tests.
 - Isolated authoritative Liar's Dice engine with private views, increasing bids,
   bluff resolution, elimination, full match completion, deterministic fallback.
+- Guest rooms for 1–3 humans plus one rule-based NPC (2–4 total), room codes,
+  ready states, host start, timed turns, dice reveal, winner, and rematch.
+- Recipient-specific game state, browser controls and dice, 3D seats for each
+  participant, reload recovery using a server-issued guest capability.
 
-Rooms and the engine are **not connected to the browser yet**. Wallet signing,
-LLM chat, negotiations, starter grants, contracts, buy-in, and settlement are not
+Wallet signing, LLM decisions/chat, negotiations, starter grants, contracts,
+buy-in, and settlement are not
 implemented. Contract and bridge directories are reservations; no contract IDs
 or testnet deployments exist. No blockchain mocks or simulated balances exist.
 The future offline LLM mode must be labelled `TEMPORARY MOCK` when implemented.
@@ -61,14 +65,47 @@ Click **Menu**, your character portrait, or press **Esc** to open the in-game me
 Choose an animal by its rendered portrait, then **Back to table**. The connection
 dot shows actual backend availability. Expand **Connection** inside the menu to
 see the API and WebSocket indicators and **Check connection again**. Both should
-read `online`; stop Java and retry to see `offline`. **Play Liar’s Dice** remains
-disabled because gameplay isn't connected. No wallet or balance is simulated.
+read `online`; stop Java and retry to see `offline`. No wallet or balance is simulated.
+
+### Play a match
+
+1. Open **Menu**, select an animal, enter a name, and click **Create room**.
+2. For multiplayer, open the app in a fresh tab or another browser, enter the
+   six-character code, and click **Join room**. Up to three human seats are allowed;
+   Don Raccoone occupies the remaining seat. You can also play alone against Don.
+3. Each human clicks **Ready**. The creator clicks **Start match**.
+4. Your private dice appear below the scene. On your turn raise the quantity, or
+   keep it and raise the face, using **Bid**. Once a bid exists, **Call bluff**
+   reveals the previous round's dice and removes one die from the loser.
+5. Ones are not wild. Turns expire after 30 seconds and use a deterministic legal
+   fallback. Don uses the same fallback, without an LLM. The reveal pause is four
+   seconds. The last participant with dice wins.
+6. Open **Menu** to ready up for a rematch or leave the room. Reloading the same
+   tab restores that guest seat and its private view. Use a fresh tab, rather than
+   duplicating an existing game tab, to create another player.
+
+Guest recovery is tab-scoped (`sessionStorage`), not NEP-413 or wallet auth. Rooms
+and secrets are in memory: restarting Java ends all matches. A disconnected guest
+has two minutes to return; its turn still times out. Explicitly leaving a running
+match makes the server play fallback moves for that seat. Idle rooms expire after
+one hour. No monetary state exists in this slice.
+
+If upgrading from the preview-only backend, rebuild/restart it:
+
+```bash
+docker compose up --build -d backend
+```
+
+The UI source can hot-reload, but Java's packaged schemas and room service need
+the rebuilt backend. Full game verification is in [free-play milestone](docs/free-play.md).
 
 ```bash
 curl http://localhost:8080/api/health
 # {"status":"UP","service":"raccoon-royale-backend","network":"testnet","protocolVersion":1}
 node scripts/smoke.mjs
 # Tests the running health + WebSocket transport without a browser.
+node scripts/game-smoke.mjs
+# Plays a real match with two guest clients and an NPC; checks reconnect and permissions.
 ```
 
 The default backend needs no database. Its state is in memory and no wallet is
@@ -146,10 +183,10 @@ See [API contracts](shared-schemas/README.md) and [AGENTS.md](AGENTS.md). The
 architecture follows `AGENTS.md` where the older specification has different
 directory names or priorities. P1 treasury/shop work has not started.
 
-Before extending wallet UI, implement a small wallet connection and NEP-413
-signing spike against current NEAR docs. Then connect rooms and this engine,
-one NPC and chat, sandbox-tested contracts, testnet bridge, verified wallet
-ownership, buy-in and settlement, paid information, and contract-limited tips.
+The user-directed priority is to stabilize free-play multiplayer and the NPC
+before adding money. Next add NPC strategy and validated chat, then the wallet
+connection/NEP-413 spike, sandbox-tested contracts, bridge, verified buy-in and
+settlement, paid information, and contract-limited tips.
 
 ## Trust and security
 

@@ -260,8 +260,10 @@ IDs, grant items only after confirmed payment, and prevent double delivery.
 9. Add the paid information deal and contract-limited tip.
 10. Finish the demo, README, and P1 items as time allows.
 
-Prove wallet connection and NEP-413 signing with a small spike before building more UI
-around them. Use simple low-poly assets until P0 passes.
+Current user-directed order: finish and test free-play multiplayer, the game engine,
+and an NPC before adding blockchain or an economy. Guest sessions are not wallet
+ownership proofs. Prove wallet connection and NEP-413 signing with a small spike
+before building wallet/payment UI. Use simple low-poly assets until P0 passes.
 
 ## Testing
 
@@ -288,6 +290,7 @@ a milestone done. Fill in the commands below as each component is created.
 # Bridge tests: not implemented (reserved workspace only)
 # Local stack: cp .env.example .env && docker compose up --build -d; npm run dev
 # Headless transport check (running backend): node scripts/smoke.mjs
+# Headless complete game (running backend): node scripts/game-smoke.mjs
 # Browser checks (running stack): npx playwright install chromium && npm run test:browser
 ```
 

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": { "dev": "vite --host 127.0.0.1", "build": "tsc --noEmit && vite build", "preview": "vite preview --host 127.0.0.1", "test": "vitest run" },
   "dependencies": {
+    "ajv": "^8.17.1",
     "@raccoon-royale/shared-schemas": "0.1.0",
     "@react-three/drei": "10.7.9",
     "@react-three/fiber": "9.8.2",

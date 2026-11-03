@@ -10,7 +10,7 @@ const validate = (definition, data) => ajv.validate({ $ref: `${schema.$id}#/$def
 const envelope = (type, payload = {}) => ({ protocolVersion: 1, type, requestId: 'request-1', payload });
 
 test('directional message contracts reject authority smuggled in by a client', () => {
-  assert.ok(validate('ClientMessage', envelope('PLAYER_BID', { matchId: 'match-1', bid: { quantity: 2, face: 6 } })));
+  assert.ok(validate('ClientMessage', envelope('PLAYER_BID', { matchId: 'match-1', expectedRevision: 0, bid: { quantity: 2, face: 6 } })));
   assert.equal(validate('ClientMessage', envelope('PLAYER_BID', { matchId: 'match-1', bid: { quantity: 2, face: 6 }, dice: [6, 6] })), false);
   assert.equal(validate('ClientMessage', envelope('GAME_RESULT', { matchId: 'match-1', winnerId: 'me', settlement: 'CONFIRMED' })), false);
   assert.equal(validate('ClientMessage', { ...envelope('PING'), walletAccountId: 'victim.testnet' }), false);
@@ -38,7 +38,7 @@ test('token amounts are exact decimal strings', () => {
 });
 
 test('public snapshots cannot carry private dice', () => {
-  const state = { matchId: 'm', phase: 'IN_PROGRESS', round: 1, participants: [
+  const state = { revision: 0, deadlineEpochMillis: 0, resumeAtEpochMillis: 0, matchId: 'm', phase: 'IN_PROGRESS', round: 1, participants: [
     { playerId: 'p1', displayName: 'Player', avatar: 'RACCOON', npc: false, diceCount: 5 },
     { playerId: 'npc', displayName: 'Don', avatar: 'RACCOON', npc: true, diceCount: 5 },
   ], currentPlayerId: 'p1', lastBid: null, lastBidderId: null, winnerId: null };

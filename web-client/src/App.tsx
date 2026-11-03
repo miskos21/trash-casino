@@ -1,7 +1,9 @@
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import { TableScene, type CameraView } from './scenes/TableScene';
 import { useAvatarStore } from './stores/avatarStore';
-import { useBackendStatus } from './services/useBackendStatus';
+import { useGameConnection } from './services/useGameConnection';
+import { RoomLobby } from './components/RoomLobby';
+import { MatchHud } from './components/MatchHud';
 import { avatars, type AvatarOption } from './avatars';
 import { GameIcon } from './components/GameIcon';
 
@@ -19,15 +21,20 @@ function Portrait({ animal, className = '' }: { animal: AvatarOption; className?
 
 export function App() {
   const { avatar, select } = useAvatarStore();
-  const status = useBackendStatus();
+  const status = useGameConnection();
   const [menuOpen, setMenuOpen] = useState(false);
   const [camera, setCamera] = useState<{ view: CameraView; revision: number }>({ view: 'table', revision: 0 });
   const [fullscreen, setFullscreen] = useState(false);
   const [notice, setNotice] = useState('');
   const menu = useRef<HTMLDialogElement>(null);
-  const selected = avatars.find((option) => option.id === avatar)!;
+  const myAvatar = status.room?.participants.find((p) => p.playerId === status.room?.youId)?.avatar ?? avatar;
+  const selected = avatars.find((option) => option.id === myAvatar)!;
   const connection = status.health === 'online' && status.socket === 'online' ? 'online'
     : status.health === 'checking' || status.socket === 'checking' ? 'checking' : 'offline';
+
+  useEffect(() => {
+    if (status.game?.publicState.matchId) setCamera((previous) => ({ view: 'table', revision: previous.revision + 1 }));
+  }, [status.game?.publicState.matchId]);
 
   useEffect(() => {
     const dialog = menu.current;
@@ -65,14 +72,14 @@ export function App() {
 
   return <main className="game-shell" aria-label="Raccoon Royale game">
     <div className="game-scene" aria-label="3D casino table">
-      <SceneBoundary><TableScene avatar={avatar} cameraView={camera.view} cameraRevision={camera.revision} /></SceneBoundary>
+      <SceneBoundary><TableScene avatar={myAvatar} room={status.room} game={status.game} reveal={status.reveal} cameraView={camera.view} cameraRevision={camera.revision} /></SceneBoundary>
     </div>
     <div className="game-vignette" aria-hidden="true" />
 
     <header className="game-header">
       <div className="game-brand"><span className="brand-monogram">RR</span><span>RACCOON<br />ROYALE</span></div>
       <div className="header-actions">
-        <span className="preview-tag">TABLE PREVIEW</span>
+        <button className="play-trigger" onClick={() => setMenuOpen(true)}>{status.room ? status.room.roomCode : 'Play'}</button>
         <button className="connection-indicator" data-connection={connection}
           aria-label={'Connection ' + connection + '. Open menu'} onClick={() => setMenuOpen(true)} title={'Connection ' + connection}>
           <span className="status-dot" /><span className="sr-only">{connection}</span>
@@ -82,6 +89,7 @@ export function App() {
       </div>
     </header>
 
+    <MatchHud connection={status} onMenu={() => setMenuOpen(true)} />
     <div className="camera-hint" aria-hidden="true"><span className="desktop-hint">Drag to look · Scroll to zoom</span><span className="touch-hint">Drag to look · Pinch to zoom</span></div>
 
     <nav className="game-toolbar" aria-label="Character and camera controls">
@@ -112,12 +120,12 @@ export function App() {
         <h2>Choose your character</h2>
         <div className="avatar-grid" role="group" aria-label="Animal avatar">
           {avatars.map((option) => <button key={option.id} className={'avatar-button ' + (avatar === option.id ? 'selected' : '')}
-            aria-label={option.name} aria-pressed={avatar === option.id} onClick={() => { select(option.id); focus('character'); }}>
+            disabled={!!status.room} aria-label={option.name} aria-pressed={myAvatar === option.id} onClick={() => { select(option.id); focus('character'); }}>
             <Portrait animal={option} /><span>{option.name}</span><span className="selection-mark" aria-hidden="true">✓</span>
           </button>)}
         </div>
         <button className="resume-button" onClick={() => setMenuOpen(false)}>Back to table <GameIcon name="chevron" /></button>
-        <button className="coming-soon" disabled>Play Liar’s Dice <span>Coming soon</span></button>
+        <RoomLobby connection={status} avatar={avatar} onStarted={() => setMenuOpen(false)} />
         <details className="menu-details"><summary>Controls</summary><p>Drag to orbit all the way around the table. Scroll or pinch to zoom. Use My character to see your animal’s face. Esc opens or closes this menu.</p></details>
         <details className="menu-details"><summary>Connection</summary>
           <div className="connection-status" aria-live="polite">

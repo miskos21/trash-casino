@@ -1,5 +1,10 @@
 # Architecture — milestone 1
 
+Current free-play implementation supersedes the transport-only status below:
+see [free-play multiplayer](free-play.md). The user's updated order puts working
+rooms and gameplay before the wallet/chain slice. No monetary boundary has been
+replaced by guest authentication.
+
 The repository initially contained only `AGENTS.md` and `docs/SPECIFICATION.md`.
 There was no existing code, build, database, or deployment to preserve. The
 explicit rules and P0 scope in `AGENTS.md` take precedence over the older, broader

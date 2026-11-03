@@ -50,7 +50,10 @@ public class Protocol {
     }
 
     public String error(String code, JsonNode requestId) throws IOException {
-        return message("ERROR", requestId, Map.of("code", code, "message",
-            code.equals("NOT_IMPLEMENTED") ? "Rooms and game actions are not connected yet." : "Message does not match protocol v1."));
+        return error(code, requestId, "Message does not match protocol v1.");
+    }
+
+    public String error(String code, JsonNode requestId, String detail) throws IOException {
+        return message("ERROR", requestId, Map.of("code", code, "message", detail));
     }
 }

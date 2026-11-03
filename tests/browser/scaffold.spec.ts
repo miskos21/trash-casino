@@ -41,7 +41,7 @@ test('fills the viewport, orbits the table, and selects a real portrait through 
   await menu.getByRole('button', { name: 'Cat', exact: true }).click();
   await expect(menu.getByRole('button', { name: 'Cat', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(menu.getByRole('button', { name: 'Raccoon', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await expect(menu.getByRole('button', { name: /Play Liar/ })).toBeDisabled();
+  await expect(menu.getByRole('button', { name: 'Create room', exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('menu.png') });
   await menu.getByRole('button', { name: 'Back to table' }).click();
   await expect(menu).not.toBeVisible();
