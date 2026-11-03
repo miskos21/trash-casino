@@ -10,11 +10,11 @@ const palettes: Record<Avatar, { fur: string; light: string; mask: string }> = {
   OWL: { fur: '#9b8864', light: '#e3d0a0', mask: '#5d503a' },
 };
 
-export function AnimalAvatar({ animal = 'RACCOON' }: { animal?: Avatar }) {
+export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?: Avatar; animated?: boolean }) {
   const group = useRef<Group>(null);
   const colors = palettes[animal];
   useFrame(({ clock }) => {
-    if (group.current) group.current.rotation.z = Math.sin(clock.elapsedTime * 1.4) * 0.025;
+    if (animated && group.current) group.current.rotation.z = Math.sin(clock.elapsedTime * 1.4) * 0.025;
   });
   return <group ref={group}>
     <mesh position={[0, 0.55, 0]} castShadow scale={[0.43, 0.58, 0.35]}>

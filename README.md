@@ -13,8 +13,8 @@ Implemented locally:
 
 - npm workspaces, lockfile, Java 21 Maven wrapper, environment template, Docker Compose.
 - React + TypeScript + Vite + React Three Fiber + drei + Zustand + Tailwind.
-- Procedural low-poly table, cups, four placeholder animal variants, local avatar
-  selection, orbit camera, WebGL fallback, responsive DOM controls.
+- Full-window procedural casino room, table, cups, four placeholder animal
+  variants, rendered face portraits, 360° orbit, character close-up, and in-game menu.
 - Spring Boot REST health and schema-validated WebSocket PING/PONG; the browser
   reports actual API and WebSocket availability with a retry button.
 - Shared JSON schemas, generated TypeScript declarations, validation tests.
@@ -52,11 +52,17 @@ In another terminal, from the repository root:
 npm run dev
 ```
 
-Open `http://localhost:5173`. You should see the 3D table with Don Raccoone,
-choose any animal to change the near seat, and drag to orbit the preview.
-Both connection indicators should read `online` after a real health request and
-WebSocket round trip. Stop Java, click **Check connection again**, and both should
-read `offline`. **Rooms coming next** is disabled because gameplay isn't wired.
+Open `http://localhost:5173`. The 3D room fills the browser window. Drag to orbit
+360° around the table, and scroll/pinch to zoom. **My character** focuses the camera
+on your animal's face; **Table** restores the table view. The fullscreen button
+can additionally hide browser chrome when the browser allows it.
+
+Click **Menu**, your character portrait, or press **Esc** to open the in-game menu.
+Choose an animal by its rendered portrait, then **Back to table**. The connection
+dot shows actual backend availability. Expand **Connection** inside the menu to
+see the API and WebSocket indicators and **Check connection again**. Both should
+read `online`; stop Java and retry to see `offline`. **Play Liar’s Dice** remains
+disabled because gameplay isn't connected. No wallet or balance is simulated.
 
 ```bash
 curl http://localhost:8080/api/health
@@ -115,6 +121,13 @@ transport independently. Contract and bridge tests do not exist yet.
 Validation results and remaining verification limits are recorded in
 [milestone 1](docs/milestone-1.md). A Three.js production chunk currently triggers
 Vite's size warning; optimization is deferred until the playable slice.
+
+Avatar portraits are checked-in PNG renders of our procedural 3D characters,
+stored in `web-client/public/portraits/`. After changing the models, with Vite
+running and Chromium installed, regenerate them using `npm run portraits:render`.
+The renderer uses `web-client/tools/portraits.html` in development only; no image
+generation API or external artwork is involved. For the full-window UI change,
+see [game view verification](docs/game-view.md).
 
 ## Structure and contracts
 

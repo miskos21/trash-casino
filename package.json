@@ -18,7 +18,8 @@
     "test": "npm test -w shared-schemas && npm test -w web-client",
     "build": "npm run schemas:check && npm run build -w web-client",
     "test:backend": "cd backend-java && ./mvnw test",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "portraits:render": "node scripts/render-portraits.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1"
