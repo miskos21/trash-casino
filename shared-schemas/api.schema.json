@@ -1,0 +1,1468 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raccoon-royale.invalid/schemas/api.v1.json",
+  "title": "ApiContract",
+  "description": "Version 1 contracts. Only health and PING/PONG transport are implemented in milestone 1.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ClientMessage"
+    },
+    {
+      "$ref": "#/$defs/ServerMessage"
+    }
+  ],
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "TokenAmount": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,38})$",
+      "description": "Exact base-unit integer string. Services must also enforce u128 and budget limits."
+    },
+    "Avatar": {
+      "type": "string",
+      "enum": [
+        "RACCOON",
+        "FOX",
+        "BEAR",
+        "OWL"
+      ]
+    },
+    "Bid": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "quantity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "face": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "quantity",
+        "face"
+      ]
+    },
+    "Participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "playerId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "avatar": {
+          "$ref": "#/$defs/Avatar"
+        },
+        "npc": {
+          "type": "boolean"
+        },
+        "diceCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      },
+      "required": [
+        "playerId",
+        "displayName",
+        "avatar",
+        "npc",
+        "diceCount"
+      ]
+    },
+    "PublicGameState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matchId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "IN_PROGRESS",
+            "FINISHED"
+          ]
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Participant"
+          },
+          "minItems": 2,
+          "maxItems": 4
+        },
+        "currentPlayerId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastBid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastBidderId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "winnerId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "matchId",
+        "phase",
+        "round",
+        "participants",
+        "currentPlayerId",
+        "lastBid",
+        "lastBidderId",
+        "winnerId"
+      ]
+    },
+    "PlayerGameState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "publicState": {
+          "$ref": "#/$defs/PublicGameState"
+        },
+        "ownDice": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          },
+          "minItems": 0,
+          "maxItems": 5
+        }
+      },
+      "required": [
+        "publicState",
+        "ownDice"
+      ]
+    },
+    "RevealedDice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "playerId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "dice": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          },
+          "minItems": 0,
+          "maxItems": 5
+        }
+      },
+      "required": [
+        "playerId",
+        "dice"
+      ]
+    },
+    "AgreementState": {
+      "type": "string",
+      "enum": [
+        "PROPOSED",
+        "COUNTERED",
+        "ACCEPTED",
+        "PAYMENT_PENDING",
+        "PAID",
+        "FULFILLED",
+        "REFUND_PENDING",
+        "REFUNDED",
+        "REJECTED",
+        "EXPIRED"
+      ]
+    },
+    "HealthResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "UP"
+        },
+        "service": {
+          "const": "raccoon-royale-backend"
+        },
+        "network": {
+          "const": "testnet"
+        },
+        "protocolVersion": {
+          "const": 1
+        }
+      },
+      "required": [
+        "status",
+        "service",
+        "network",
+        "protocolVersion"
+      ]
+    },
+    "ApiError": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_MESSAGE",
+            "NOT_IMPLEMENTED",
+            "UNAUTHORIZED",
+            "NOT_FOUND"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "ChatRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matchId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "matchId",
+        "message"
+      ]
+    },
+    "OfferRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matchId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "service": {
+          "const": "OWN_DICE"
+        },
+        "proposedPrice": {
+          "$ref": "#/$defs/TokenAmount"
+        }
+      },
+      "required": [
+        "matchId",
+        "service",
+        "proposedPrice"
+      ]
+    },
+    "OfferResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agreementId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "state": {
+          "$ref": "#/$defs/AgreementState"
+        },
+        "price": {
+          "$ref": "#/$defs/TokenAmount"
+        }
+      },
+      "required": [
+        "agreementId",
+        "state",
+        "price"
+      ]
+    },
+    "AgentAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "BID",
+            "CALL_BLUFF",
+            "CHAT",
+            "ACCEPT",
+            "REJECT",
+            "COUNTER",
+            "TIP"
+          ]
+        },
+        "bid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposedPrice": {
+          "$ref": "#/$defs/TokenAmount"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "agreementId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "bid",
+        "proposedPrice",
+        "message",
+        "agreementId"
+      ]
+    },
+    "ProfileResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "playerId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "walletAccountId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "playerId",
+        "displayName",
+        "walletAccountId"
+      ]
+    },
+    "BalanceResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "amount": {
+          "$ref": "#/$defs/TokenAmount"
+        },
+        "decimals": {
+          "const": 24
+        },
+        "symbol": {
+          "const": "TRASH"
+        },
+        "network": {
+          "const": "testnet"
+        }
+      },
+      "required": [
+        "accountId",
+        "amount",
+        "decimals",
+        "symbol",
+        "network"
+      ]
+    },
+    "Transaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "transactionHash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "SUCCEEDED",
+            "FAILED"
+          ]
+        },
+        "amount": {
+          "$ref": "#/$defs/TokenAmount"
+        }
+      },
+      "required": [
+        "transactionHash",
+        "state",
+        "amount"
+      ]
+    },
+    "TransactionsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "transactions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Transaction"
+          },
+          "minItems": 0
+        }
+      },
+      "required": [
+        "transactions"
+      ]
+    },
+    "ChatResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "agentId",
+        "message"
+      ]
+    },
+    "HallEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matchId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "attackerMessage": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "result": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "matchId",
+        "attackerMessage",
+        "result"
+      ]
+    },
+    "HallOfShameResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HallEntry"
+          },
+          "minItems": 0
+        }
+      },
+      "required": [
+        "entries"
+      ]
+    },
+    "PING": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "PING"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {},
+          "required": []
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "PONG": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "PONG"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {},
+          "required": []
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "CONNECTED": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "CONNECTED"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "service": {
+              "const": "raccoon-royale-backend"
+            }
+          },
+          "required": [
+            "service"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "ROOM_CREATE": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ROOM_CREATE"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "avatar": {
+              "$ref": "#/$defs/Avatar"
+            }
+          },
+          "required": [
+            "displayName",
+            "avatar"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "ROOM_JOIN": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ROOM_JOIN"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roomCode": {
+              "type": "string",
+              "pattern": "^[A-Z0-9]{6}$"
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "avatar": {
+              "$ref": "#/$defs/Avatar"
+            }
+          },
+          "required": [
+            "roomCode",
+            "displayName",
+            "avatar"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "ROOM_READY": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ROOM_READY"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roomId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "ready": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "roomId",
+            "ready"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "GAME_START": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "GAME_START"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "matchId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "PLAYER_BID": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "PLAYER_BID"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "bid": {
+              "$ref": "#/$defs/Bid"
+            }
+          },
+          "required": [
+            "matchId",
+            "bid"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "CALL_BLUFF": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "CALL_BLUFF"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "matchId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "GAME_STATE": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "GAME_STATE"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "$ref": "#/$defs/PlayerGameState"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "TURN": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "TURN"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "playerId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "deadlineEpochMillis": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "matchId",
+            "playerId",
+            "deadlineEpochMillis"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "DICE_REVEAL": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "DICE_REVEAL"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "round": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "dice": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RevealedDice"
+              },
+              "minItems": 2,
+              "maxItems": 4
+            },
+            "loserId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "matchId",
+            "round",
+            "dice",
+            "loserId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "NPC_CHAT": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "NPC_CHAT"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "agentId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "matchId",
+            "agentId",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "PLAYER_CHAT": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "PLAYER_CHAT"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "$ref": "#/$defs/ChatRequest"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "AI_ACTION": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "AI_ACTION"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "agentId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "BID",
+                "CALL_BLUFF",
+                "CHAT",
+                "ACCEPT",
+                "REJECT",
+                "COUNTER",
+                "TIP"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "matchId",
+            "agentId",
+            "action",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "GAME_RESULT": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "GAME_RESULT"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "winnerId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "settlement": {
+              "type": "string",
+              "enum": [
+                "NOT_STARTED",
+                "PENDING",
+                "CONFIRMED",
+                "FAILED"
+              ]
+            }
+          },
+          "required": [
+            "matchId",
+            "winnerId",
+            "settlement"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "PLAYER_DISCONNECT": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "PLAYER_DISCONNECT"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roomId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "playerId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "roomId",
+            "playerId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "PLAYER_RECONNECT": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "PLAYER_RECONNECT"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roomId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "roomId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "ROOM_LEAVE": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ROOM_LEAVE"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roomId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "roomId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "ERROR": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ERROR"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "$ref": "#/$defs/ApiError"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "ClientMessage": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PING"
+        },
+        {
+          "$ref": "#/$defs/ROOM_CREATE"
+        },
+        {
+          "$ref": "#/$defs/ROOM_JOIN"
+        },
+        {
+          "$ref": "#/$defs/ROOM_READY"
+        },
+        {
+          "$ref": "#/$defs/PLAYER_BID"
+        },
+        {
+          "$ref": "#/$defs/CALL_BLUFF"
+        },
+        {
+          "$ref": "#/$defs/PLAYER_CHAT"
+        },
+        {
+          "$ref": "#/$defs/PLAYER_RECONNECT"
+        },
+        {
+          "$ref": "#/$defs/ROOM_LEAVE"
+        }
+      ]
+    },
+    "ServerMessage": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PONG"
+        },
+        {
+          "$ref": "#/$defs/CONNECTED"
+        },
+        {
+          "$ref": "#/$defs/GAME_START"
+        },
+        {
+          "$ref": "#/$defs/GAME_STATE"
+        },
+        {
+          "$ref": "#/$defs/TURN"
+        },
+        {
+          "$ref": "#/$defs/DICE_REVEAL"
+        },
+        {
+          "$ref": "#/$defs/NPC_CHAT"
+        },
+        {
+          "$ref": "#/$defs/AI_ACTION"
+        },
+        {
+          "$ref": "#/$defs/GAME_RESULT"
+        },
+        {
+          "$ref": "#/$defs/PLAYER_DISCONNECT"
+        },
+        {
+          "$ref": "#/$defs/ERROR"
+        }
+      ]
+    }
+  }
+}

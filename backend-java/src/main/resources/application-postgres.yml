@@ -1,0 +1,11 @@
+spring:
+  autoconfigure:
+    exclude: []
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/raccoon_royale}
+    username: ${POSTGRES_USER:raccoon}
+    password: ${POSTGRES_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate

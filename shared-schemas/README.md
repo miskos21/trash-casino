@@ -1,0 +1,68 @@
+# API contracts v1
+
+`api.schema.json` is the source of truth (JSON Schema Draft 2020-12). Every object
+rejects unknown fields. TypeScript declarations in `generated/api.d.ts` are
+generated and checked during the root build. Java packages this exact schema
+and validates every inbound WebSocket message against `ClientMessage`.
+
+```bash
+npm run schemas:generate # after changing the JSON schema
+npm run schemas:check    # fails if generated declarations are stale
+npm test -w shared-schemas
+```
+
+The schema file's root validates WebSocket messages. REST and AI definitions are
+addressable as `#/$defs/HealthResponse`, `#/$defs/AgentAction`, etc. TS generation
+includes those definitions too. `ApiContract` in generated declarations is the
+union of all definitions, not a runtime validator.
+
+## WebSocket
+
+Path: `/ws`, raw JSON text, no STOMP. Each message has required fields:
+
+```json
+{"protocolVersion":1,"type":"PING","requestId":"check-1","payload":{}}
+```
+
+Implemented: server sends `CONNECTED`; client sends `PING`; server replies `PONG`
+with the same request ID. Invalid messages receive `ERROR/INVALID_MESSAGE` with
+null request ID. Well-formed future client commands receive `ERROR/NOT_IMPLEMENTED`.
+
+Reserved client commands: `ROOM_CREATE`, `ROOM_JOIN`, `ROOM_READY`, `PLAYER_BID`,
+`CALL_BLUFF`, `PLAYER_CHAT`, `PLAYER_RECONNECT`, `ROOM_LEAVE`.
+
+Reserved server events: `GAME_START`, `TURN`, `GAME_STATE`, `DICE_REVEAL`,
+`NPC_CHAT`, `AI_ACTION`, `GAME_RESULT`, `PLAYER_DISCONNECT`.
+`GAME_STATE` is recipient-specific (`ownDice` plus public state). Never broadcast
+one recipient's complete snapshot to a room. `AI_ACTION` carries only public
+action metadata, not the LLM's private input or full proposal. Reconnect and
+disconnect schemas describe future lifecycle handling, not current support.
+
+## REST
+
+| Method / path | Response definition | Status |
+|---|---|---|
+| `GET /api/health` | `HealthResponse` | Implemented |
+| `GET /api/profile` | `ProfileResponse` | Planned; requires wallet auth |
+| `GET /api/wallet/balance` | `BalanceResponse` | Planned |
+| `GET /api/wallet/transactions` | `TransactionsResponse` | Planned |
+| `POST /api/agents/{id}/chat` | `ChatResponse` (body `ChatRequest`) | Planned |
+| `POST /api/agents/{id}/offers` | `OfferResponse` (body `OfferRequest`) | Planned |
+| `GET /api/agents/{id}/offers/{offerId}` | `OfferResponse` | Planned |
+| `GET /api/games/{matchId}` | `PlayerGameState` | Planned; recipient scoped |
+| `GET /api/hall-of-shame` | `HallOfShameResponse` | Planned |
+
+Unimplemented REST endpoints currently return Spring's 404; there are no dummy
+success responses. `ApiError` is the future REST error shape as well as the
+implemented WebSocket error payload. Shop and treasury schemas come with P1.
+
+## Context validation
+
+Schemas enforce shape, not game legality, ownership, or transaction finality.
+The engine validates contextual bid bounds and turns. Future agent validation
+must require a bid for `BID`, enforce action-specific field combinations,
+permissions, valid agreement states, and spending bounds. Non-bid proposals use
+`bid: null`; all schema fields remain required. `TokenAmount` is an unsigned
+decimal string of at most 39 digits, with u128 maximum and budget checks required
+in the consuming service. `SUCCEEDED` and `CONFIRMED` must only be emitted after
+final successful on-chain execution.
