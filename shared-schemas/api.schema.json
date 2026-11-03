@@ -1910,12 +1910,12 @@
           "items": {
             "$ref": "#/$defs/Card"
           },
-          "minItems": 2,
+          "minItems": 0,
           "maxItems": 12
         },
         "total": {
           "type": "integer",
-          "minimum": 2,
+          "minimum": 0,
           "maximum": 31
         },
         "status": {
@@ -1940,6 +1940,9 @@
               "type": "null"
             }
           ]
+        },
+        "tally": {
+          "$ref": "#/$defs/BlackjackTally"
         }
       },
       "required": [
@@ -1950,7 +1953,8 @@
         "cards",
         "total",
         "status",
-        "outcome"
+        "outcome",
+        "tally"
       ]
     },
     "BlackjackDealer": {
@@ -1962,7 +1966,7 @@
           "items": {
             "$ref": "#/$defs/Card"
           },
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 12,
           "description": "Face-up cards only. The hole card is never sent before the dealer reveals it."
         },
@@ -1973,7 +1977,7 @@
         },
         "total": {
           "type": "integer",
-          "minimum": 1,
+          "minimum": 0,
           "maximum": 31,
           "description": "Total of the face-up cards."
         }
@@ -1996,7 +2000,30 @@
           "enum": [
             "IN_PROGRESS",
             "FINISHED"
-          ]
+          ],
+          "description": "FINISHED only when the shoe has ended; hands continue while IN_PROGRESS."
+        },
+        "hand": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "handPhase": {
+          "enum": [
+            "SHUFFLING",
+            "PLAYING",
+            "RESULT"
+          ],
+          "description": "SHUFFLING (hand 0) precedes the first deal; RESULT shows the settled hand before the next deal."
+        },
+        "cardsRemaining": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 312
+        },
+        "nextHandAtEpochMillis": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0 unless the next hand of this shoe is scheduled."
         },
         "players": {
           "type": "array",
@@ -2026,16 +2053,24 @@
         "deadlineEpochMillis": {
           "type": "integer",
           "minimum": 0
+        },
+        "shoe": {
+          "$ref": "#/$defs/BlackjackShoe"
         }
       },
       "required": [
         "matchId",
         "phase",
+        "hand",
+        "handPhase",
+        "cardsRemaining",
+        "nextHandAtEpochMillis",
         "players",
         "dealer",
         "currentPlayerId",
         "revision",
-        "deadlineEpochMillis"
+        "deadlineEpochMillis",
+        "shoe"
       ]
     },
     "BLACKJACK_HIT": {
@@ -2157,6 +2192,107 @@
         "type",
         "requestId",
         "payload"
+      ]
+    },
+    "BlackjackTally": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Results across the hands of the current shoe. Blackjacks also count as wins.",
+      "properties": {
+        "wins": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "losses": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "pushes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "blackjacks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "wins",
+        "losses",
+        "pushes",
+        "blackjacks"
+      ]
+    },
+    "BlackjackShoe": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Casino-style shoe. commitment = SHA-256 hex of salt + ':' + comma-separated order (rank+suit), published before the first card. The reveal appears only after the shoe ends. It proves the order did not change during play, not that the shuffle was random.",
+      "properties": {
+        "decks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 312
+        },
+        "burned": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "handStart": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 312
+        },
+        "commitment": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "reveal": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "salt": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "order": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Card"
+                  },
+                  "minItems": 1,
+                  "maxItems": 312
+                }
+              },
+              "required": [
+                "salt",
+                "order"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "decks",
+        "size",
+        "burned",
+        "handStart",
+        "commitment",
+        "reveal"
       ]
     }
   }

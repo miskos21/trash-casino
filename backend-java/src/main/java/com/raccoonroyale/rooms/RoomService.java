@@ -60,7 +60,7 @@ public class RoomService {
         Room(String code,String gameType) { this.code=code; this.gameType=gameType; this.lastActivity=System.currentTimeMillis(); }
         LiarsDiceGame.PublicState state() { return game.viewFor(seats.getFirst().id).publicState(); }
         String phase() {
-            if(blackjack!=null) return blackjack.publicState().finished() ? "FINISHED" : "IN_PROGRESS";
+            if(blackjack!=null) return blackjack.publicState().shoeOver() ? "FINISHED" : "IN_PROGRESS";
             return game==null ? "LOBBY" : state().winnerId()==null ? "IN_PROGRESS" : "FINISHED";
         }
     }
@@ -74,10 +74,11 @@ public class RoomService {
         long revision,long deadlineEpochMillis,long resumeAtEpochMillis,List<PublicGameEvent> history) {}
     public record PlayerState(PublicState publicState,List<Integer> ownDice) {}
     public record BlackjackHand(String playerId,String displayName,String avatar,boolean npc,List<BlackjackGame.Card> cards,int total,
-        BlackjackGame.Status status,BlackjackGame.Outcome outcome) {}
+        BlackjackGame.Status status,BlackjackGame.Outcome outcome,BlackjackGame.Tally tally) {}
     public record BlackjackDealer(List<BlackjackGame.Card> cards,int hiddenCards,int total) {}
-    public record BlackjackState(String matchId,String phase,List<BlackjackHand> players,BlackjackDealer dealer,
-        String currentPlayerId,long revision,long deadlineEpochMillis) {}
+    public record BlackjackShoe(int decks,int size,int burned,int handStart,String commitment,BlackjackGame.ShoeReveal reveal) {}
+    public record BlackjackState(String matchId,String phase,int hand,String handPhase,int cardsRemaining,long nextHandAtEpochMillis,
+        List<BlackjackHand> players,BlackjackDealer dealer,String currentPlayerId,long revision,long deadlineEpochMillis,BlackjackShoe shoe) {}
     private static class Rejected extends RuntimeException {
         final String code;
         Rejected(String code,String text) { super(text);this.code=code; }
@@ -247,7 +248,7 @@ public class RoomService {
     }
     private void blackjackAction(Peer peer,String type,JsonNode payload) {
         Room room=room(peer);
-        require(room.blackjack!=null&&room.phase().equals("IN_PROGRESS"),"ILLEGAL_ACTION","No active hand.");
+        require(room.blackjack!=null&&!room.blackjack.publicState().handOver(),"ILLEGAL_ACTION","No active hand.");
         require(room.matchId.equals(payload.path("matchId").asText()),"STALE_STATE","Wrong match.");
         require(room.revision==payload.path("expectedRevision").asLong(),"STALE_STATE","The turn has changed. Use the latest state.");
         room.blackjack.apply(peer.playerId,type.equals("BLACKJACK_HIT")?BlackjackGame.Action.HIT:BlackjackGame.Action.STAND);
@@ -255,7 +256,9 @@ public class RoomService {
         afterBlackjackMove(room);publish(room);
     }
     private void afterBlackjackMove(Room room) {
-        if(room.blackjack.publicState().finished()) {room.deadline=0;room.seats.forEach(s->s.ready=s.npc);}
+        var state=room.blackjack.publicState();
+        if(state.shoeOver()) {room.deadline=0;room.resumeAt=0;room.seats.forEach(s->s.ready=s.npc);}
+        else if(state.handOver()) {room.deadline=0;room.resumeAt=System.currentTimeMillis()+revealMillis;} // Show the result first.
         else scheduleTurn(room);
     }
     private void event(Room room,String type,int round,String actor,LiarsDiceGame.Bid bid,String loser,Integer count,String cause) {
@@ -303,10 +306,13 @@ public class RoomService {
         if(room.blackjack!=null) {
             var state=room.blackjack.publicState();
             var hands=state.players().stream().map(h->{Seat s=room.dealt.get(h.playerId());
-                return new BlackjackHand(h.playerId(),s.name,s.avatar,s.npc,h.cards(),h.total(),h.status(),h.outcome());}).toList();
-            send(recipient.socket,"BLACKJACK_STATE",null,new BlackjackState(room.matchId,room.phase(),hands,
+                return new BlackjackHand(h.playerId(),s.name,s.avatar,s.npc,h.cards(),h.total(),h.status(),h.outcome(),h.tally());}).toList();
+            send(recipient.socket,"BLACKJACK_STATE",null,new BlackjackState(room.matchId,room.phase(),state.handNumber(),
+                state.handNumber()==0?"SHUFFLING":state.handOver()?"RESULT":"PLAYING",state.cardsRemaining(),
+                state.handOver()&&!state.shoeOver()?room.resumeAt:0,hands,
                 new BlackjackDealer(state.dealerCards(),state.hiddenCards(),state.dealerTotal()),
-                state.currentPlayerId(),room.revision,room.deadline));
+                state.currentPlayerId(),room.revision,room.deadline,new BlackjackShoe(BlackjackGame.DECKS,state.shoeSize(),
+                    state.burned(),state.handStart(),state.commitment(),state.shoeOver()?room.blackjack.reveal():null)));
             return;
         }
         if(room.game==null) return;
@@ -347,6 +353,10 @@ public class RoomService {
             }
             if(!room.phase().equals("IN_PROGRESS")) continue;
             if(room.blackjack!=null) {
+                if(room.blackjack.publicState().handOver()) {
+                    if(now>=room.resumeAt) {room.blackjack.nextHand();room.revision++;afterBlackjackMove(room);publish(room);}
+                    continue;
+                }
                 String actor=room.blackjack.publicState().currentPlayerId();Seat seat=seat(room,actor);
                 if((seat.npc||seat.abandoned)?now>=room.npcAt:now>=room.deadline) {
                     room.blackjack.apply(actor,seat.npc?room.blackjack.npcMoveFor(actor):room.blackjack.fallbackFor(actor));

@@ -39,6 +39,8 @@ Implemented events: `ROOM_SESSION`, `ROOM_STATE`, `GAME_START`, `GAME_STATE`,
 `DICE_REVEAL`, `GAME_RESULT`, `BLACKJACK_STATE`. Turn identity and timing are carried by
 `GAME_STATE` or `BLACKJACK_STATE`. `BLACKJACK_STATE` holds only face-up cards; the
 dealer's hole card is represented by `hiddenCards: 1` until the hand finishes.
+A Blackjack match is one shoe: `handPhase` cycles `PLAYING` → `RESULT` per hand, and
+`phase` becomes `FINISHED` only when the cut card ends the shoe.
 `TURN`, `NPC_CHAT`, `AI_ACTION`, and `PLAYER_DISCONNECT` remain reserved.
 `GAME_STATE` is recipient-specific (`ownDice` plus public state). Never broadcast
 one recipient's complete snapshot to a room. `AI_ACTION` carries only public

@@ -120,7 +120,7 @@ button:disabled { opacity: 0.45; }
 .playing-badge { position: absolute; top: -5px; right: 7px; padding: 2px 5px; background: #dabb7e; color: #22301e; font-size: 8px; border-radius: 3px; }
 .player-last-claim { display: flex; align-items: center; gap: 5px; font-size: 10px; margin-top: 6px; color: #dec792; }
 .match-actions { position: absolute; z-index: 11; bottom: 119px; left: 50%; transform: translateX(-50%); width: min(548px, calc(100vw - 28px)); padding: 15px 18px 11px; border: 1px solid #9da87b80; border-radius: 13px; background: #13231ef7; box-shadow: 0 12px 40px #07110d66; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }
-.action-turn-line, .bid-controls, .blackjack-controls, .claim-explanation, .match-mode-footer, .match-actions > .room-error, .match-actions > .resume-button { grid-column: 1 / -1; }
+.action-turn-line, .bid-controls, .blackjack-controls, .shoe-standings, .claim-explanation, .match-mode-footer, .match-actions > .room-error, .match-actions > .resume-button { grid-column: 1 / -1; }
 .game-shell:has(.match-actions) .camera-hint { display: none; }
 .match-actions.is-your-turn { border: 2px solid #e4c17e; padding: 14px 17px 10px; box-shadow: 0 10px 40px #07110d88; }
 .action-turn-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid #b8b18a33; padding-bottom: 10px; }
@@ -164,6 +164,21 @@ button:disabled { opacity: 0.45; }
 .agent-picker small { font-size: 9px; color: #aab79c; }
 .agent-picker { grid-template-columns: repeat(3, 1fr); margin-top: 0; }
 .dealer-mark { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 7px; background: #7c2f2a; color: #f4ecd8; font-size: 22px; flex-shrink: 0; }
+.shoe-fingerprint { grid-column: 1 / -1; margin: 0 0 10px; font-size: 10px; color: #a9b79b; }
+.shoe-fingerprint code { color: #e0c48a; font-size: 10px; }
+.shoe-verdict { grid-column: 1 / -1; margin: 0 0 10px; padding: 9px 11px; border-radius: 8px; background: #1c2f27; font-size: 11px; color: #c4ceb7; }
+.shoe-verdict.verified { border-left: 3px solid #8fc27a; }
+.shoe-verdict.mismatch { border-left: 3px solid #e0735c; background: #3a1f1a; }
+.shoe-verdict strong { display: block; margin-bottom: 4px; color: #f5ddb1; }
+.shoe-verdict ul { margin: 0 0 4px; padding-left: 16px; line-height: 1.6; }
+.shoe-verdict small { color: #94a289; font-size: 9px; }
+.hand-tally { color: #e0c48a !important; letter-spacing: 0.04em; }
+.shoe-standings { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 5px; counter-reset: place; }
+.shoe-standings li { display: grid; grid-template-columns: 22px 1fr auto auto; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 7px; background: #1c2f27; font-size: 12px; counter-increment: place; }
+.shoe-standings li::before { content: counter(place) "."; color: #e0bd76; }
+.shoe-standings li:first-child { outline: 1px solid #e0bd76; }
+.shoe-standings strong { color: #f5ddb1; font-weight: 600; }
+.shoe-standings small { color: #a9b79b; font-size: 10px; }
 .seat-cards { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
 .blackjack-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .blackjack-controls button { min-height: 43px; font-size: 13px; }

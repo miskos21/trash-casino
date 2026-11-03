@@ -62,7 +62,9 @@ export type ApiContract =
   | BlackjackState
   | BLACKJACK_HIT
   | BLACKJACK_STAND
-  | BLACKJACK_STATE;
+  | BLACKJACK_STATE
+  | BlackjackTally
+  | BlackjackShoe;
 export type Identifier = string;
 /**
  * Exact base-unit integer string. Services must also enforce u128 and budget limits.
@@ -532,7 +534,20 @@ export interface BLACKJACK_STATE {
 }
 export interface BlackjackState {
   matchId: Identifier;
+  /**
+   * FINISHED only when the shoe has ended; hands continue while IN_PROGRESS.
+   */
   phase: "IN_PROGRESS" | "FINISHED";
+  hand: number;
+  /**
+   * SHUFFLING (hand 0) precedes the first deal; RESULT shows the settled hand before the next deal.
+   */
+  handPhase: "SHUFFLING" | "PLAYING" | "RESULT";
+  cardsRemaining: number;
+  /**
+   * 0 unless the next hand of this shoe is scheduled.
+   */
+  nextHandAtEpochMillis: number;
   /**
    * @minItems 1
    * @maxItems 4
@@ -546,6 +561,7 @@ export interface BlackjackState {
   currentPlayerId: Identifier | null;
   revision: number;
   deadlineEpochMillis: number;
+  shoe: BlackjackShoe;
 }
 export interface BlackjackHand {
   playerId: Identifier;
@@ -553,10 +569,12 @@ export interface BlackjackHand {
   avatar: Avatar;
   npc: boolean;
   /**
-   * @minItems 2
+   * @minItems 0
    * @maxItems 12
    */
   cards:
+    | []
+    | [Card]
     | [Card, Card]
     | [Card, Card, Card]
     | [Card, Card, Card, Card]
@@ -571,10 +589,20 @@ export interface BlackjackHand {
   total: number;
   status: "PLAYING" | "STOOD" | "BUST" | "BLACKJACK";
   outcome: ("WIN" | "LOSE" | "PUSH" | "BLACKJACK") | null;
+  tally: BlackjackTally;
 }
 export interface Card {
   rank: "A" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "J" | "Q" | "K";
   suit: "S" | "H" | "D" | "C";
+}
+/**
+ * Results across the hands of the current shoe. Blackjacks also count as wins.
+ */
+export interface BlackjackTally {
+  wins: number;
+  losses: number;
+  pushes: number;
+  blackjacks: number;
 }
 /**
  * The house dealer. It has no seat and follows fixed rules.
@@ -583,10 +611,11 @@ export interface BlackjackDealer {
   /**
    * Face-up cards only. The hole card is never sent before the dealer reveals it.
    *
-   * @minItems 1
+   * @minItems 0
    * @maxItems 12
    */
   cards:
+    | []
     | [Card]
     | [Card, Card]
     | [Card, Card, Card]
@@ -604,4 +633,22 @@ export interface BlackjackDealer {
    * Total of the face-up cards.
    */
   total: number;
+}
+/**
+ * Casino-style shoe. commitment = SHA-256 hex of salt + ':' + comma-separated order (rank+suit), published before the first card. The reveal appears only after the shoe ends. It proves the order did not change during play, not that the shuffle was random.
+ */
+export interface BlackjackShoe {
+  decks: number;
+  size: number;
+  burned: number;
+  handStart: number;
+  commitment: string;
+  reveal: null | {
+    salt: string;
+    /**
+     * @minItems 1
+     * @maxItems 312
+     */
+    order: [Card, ...Card[]];
+  };
 }

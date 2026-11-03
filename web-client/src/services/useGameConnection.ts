@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BlackjackState, ClientMessage, PlayerGameState, RoomState, ROOM_SESSION, DICE_REVEAL } from '@raccoon-royale/shared-schemas/types';
 import { checkHealth, parseServer } from './backend';
+import { witness, type WitnessedHand } from '../game/shoeVerify';
 
 type Status = 'checking' | 'online' | 'offline';
 const storageKey = 'raccoon-guest-session';
@@ -22,6 +23,8 @@ export function useGameConnection() {
   const [room, setRoom] = useState<RoomState | null>(null);
   const [game, setGame] = useState<PlayerGameState | null>(null);
   const [blackjack, setBlackjack] = useState<BlackjackState | null>(null);
+  // Settled hands this tab saw, kept so the shoe can be checked against its reveal.
+  const [witnessed, setWitnessed] = useState<{ matchId: string; hands: WitnessedHand[] }>({ matchId: '', hands: [] });
   const [reveal, setReveal] = useState<DICE_REVEAL['payload'] | null>(null);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
@@ -62,7 +65,15 @@ export function useGameConnection() {
             case 'ROOM_STATE': setRoom(message.payload); setPending(false); break;
             case 'GAME_START': setReveal(null); setGame(null); setBlackjack(null); break;
             case 'GAME_STATE': setGame(message.payload); setPending(false); break;
-            case 'BLACKJACK_STATE': setBlackjack(message.payload); setPending(false); break;
+            case 'BLACKJACK_STATE': {
+              const state = message.payload, seen = witness(state);
+              setBlackjack(state); setPending(false);
+              setWitnessed((previous) => {
+                const hands = previous.matchId === state.matchId ? previous.hands : [];
+                return !seen || hands.some((h) => h.hand === seen.hand) ? { matchId: state.matchId, hands } : { matchId: state.matchId, hands: [...hands, seen] };
+              });
+              break;
+            }
             case 'DICE_REVEAL': setReveal(message.payload); break;
             case 'ERROR':
               setError(message.payload.message); setPending(false);
@@ -105,7 +116,7 @@ export function useGameConnection() {
     try { sessionStorage.removeItem(storageKey); } catch { /* No storage. */ }
     setRoom(null); setGame(null); setBlackjack(null); setReveal(null); setPending(false);
   }, [room, send]);
-  return { health, socket, room, game, blackjack, reveal, error, pending, send, leave,
+  return { health, socket, room, game, blackjack, witnessed: witnessed.hands, reveal, error, pending, send, leave,
     retry: () => setAttempt((n) => n + 1), clearError: () => setError('') };
 }
 export type GameConnection = ReturnType<typeof useGameConnection>;

@@ -19,6 +19,8 @@ export function GameRules({ game = 'LIARS_DICE' }: { game?: GameType }) {
           <li>On your turn, <strong>Hit</strong> to take a card or <strong>Stand</strong> to keep your total. Over 21 is a bust and loses.</li>
           <li>The dealer then reveals and draws until reaching 17 or more. Closer to 21 than the dealer wins; an equal total is a push.
             Ace plus a 10-value card as your first two cards is a <strong>Blackjack</strong>.</li>
+          <li>Hands keep coming from one <strong>six-deck shoe</strong>. When about three quarters of it is dealt, the cut card
+            ends the session after that hand and the standings show everyone’s wins, losses, and pushes.</li>
         </ol> : <ol>
           <li>Everyone starts with <strong>5 dice</strong>. You see your own dice; other players’ dice stay hidden.</li>
           <li>A claim like <strong>“4 × ⚄”</strong> means: “Across everyone’s dice, at least four dice show five.” It is not a token bet.</li>
@@ -26,7 +28,7 @@ export function GameRules({ game = 'LIARS_DICE' }: { game?: GameType }) {
           <li><strong>Call bluff</strong> to reveal all dice. If the claim is met, the caller loses one die. Otherwise, the player who made the claim loses one.</li>
           <li>The round loser starts again, or the next active player if the loser is eliminated. With no dice you are out. <strong>The last player with dice wins.</strong></li>
         </ol>}
-        <p>{blackjack ? 'If the turn timer runs out, you stand automatically. Agents hit below 17 and stand otherwise. The server shuffles two decks for every hand; this is not provably fair randomness.'
+        <p>{blackjack ? 'If the turn timer runs out, you stand automatically. Agents hit below 17 and stand otherwise. The server shuffles each shoe; this is not provably fair randomness.'
           : 'The turn timer uses a legal fallback if you run out of time. Agents (Don, Foxy) currently play rule-based moves.'}</p>
         <button className="resume-button" onClick={() => dialog.current?.close()}>Got it</button>
       </div>

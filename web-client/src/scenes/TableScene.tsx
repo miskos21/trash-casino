@@ -8,6 +8,7 @@ import { CameraController, type CameraView } from '../components/three/CameraCon
 import { TableEnvironment } from '../components/three/TableEnvironment';
 import { Dice } from '../components/three/Dice';
 import { PlayingCard3D } from '../components/three/PlayingCard3D';
+import { CardShoe } from '../components/three/CardShoe';
 import { isRevealVisible, visibleDiceForSeat } from '../game/presentation';
 import { useMatchNow } from '../game/MatchClock';
 
@@ -61,6 +62,7 @@ export function TableScene({ avatar, room, game, blackjack, reveal, cameraView, 
       </group>;
     })}
     {/* The house dealer has no seat: its cards sit mid-table, readable from your seat. */}
+    {blackjack && <CardShoe remaining={blackjack.cardsRemaining} size={blackjack.shoe.size} shuffling={blackjack.handPhase === 'SHUFFLING'} />}
     {blackjack && [...blackjack.dealer.cards, ...Array<null>(blackjack.dealer.hiddenCards).fill(null)].map((card, i, dealt) =>
       <PlayingCard3D key={'dealer-' + i} card={card} turn={Math.PI} position={[(i - (dealt.length - 1) / 2) * 0.25, 1.252 + i * 0.002, -0.35]} />)}
     <CameraController view={cameraView} revision={cameraRevision} />

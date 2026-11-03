@@ -103,9 +103,25 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
 4. Agents play their own hands after the humans: they hit below 17 and otherwise
    stand, using only their own cards. After the last player, the dealer reveals and draws to 17 or more (stands on
    soft 17). Each hand shows Win, Lose, Push, or Blackjack. A dealer natural ends
-   the hand immediately. Use **Back to lobby**, **Ready**, **Play again** to deal again.
+   the hand immediately.
+5. After a four-second result pause the next hand is dealt from the same shoe, and
+   each seat's W/L/P tally keeps counting. The header shows the hand number and the
+   cards left. When the cut card comes out (75% of the shoe dealt), that hand
+   finishes and the session ends with standings. Then use **Back to lobby**,
+   **Ready**, **Play again** for a fresh shoe.
 
-Two standard decks are shuffled with `SecureRandom` for every hand. Blackjack is
+Like a casino shoe: before the first deal the dealer shuffles six decks once with
+`SecureRandom` and burns the top card. Every hand then comes off the top of that
+same shoe, in order, until the cut card (about 15–30 hands depending on seats).
+
+**Shoe check.** Before the first card, the server publishes a fingerprint:
+SHA-256 of a random salt plus the full card order. When the shoe ends it reveals
+the salt and order, and the browser checks three things itself. The order must match
+the fingerprint, the shoe must hold exactly six complete decks, and every hand that tab
+saw must have come off the shoe in that order. This proves the order was fixed before play and
+never changed mid-shoe. It does **not** prove the shuffle was random: the server
+chose it and remains trusted. Hands dealt while a tab was closed are not checked
+by that tab. Blackjack is
 also free play: no buy-in, no payout, and no 3:2 token reward. No double, split,
 insurance, or surrender in this slice.
 

@@ -72,11 +72,18 @@ test('blackjack moves carry no cards and the dealer hole card has no public fiel
   assert.equal(validate('ClientMessage', envelope('ROOM_CREATE', { displayName: 'P', avatar: 'FROG', agents: 3 })), false);
   assert.equal(validate('ClientMessage', envelope('ROOM_CREATE', { displayName: 'P', avatar: 'FROG', game: 'POKER' })), false);
   const hand = { playerId: 'p1', displayName: 'P', avatar: 'CAT', npc: false, cards: [{ rank: 'A', suit: 'S' }, { rank: 'K', suit: 'H' }],
-    total: 21, status: 'BLACKJACK', outcome: null };
+    total: 21, status: 'BLACKJACK', outcome: null, tally: { wins: 2, losses: 1, pushes: 0, blackjacks: 1 } };
   const dealer = { cards: [{ rank: '9', suit: 'C' }], hiddenCards: 1, total: 9 };
-  const state = { matchId: 'm', phase: 'IN_PROGRESS', players: [hand], dealer, currentPlayerId: null, revision: 0, deadlineEpochMillis: 0 };
+  const state = { matchId: 'm', phase: 'IN_PROGRESS', hand: 4, handPhase: 'PLAYING', cardsRemaining: 250, nextHandAtEpochMillis: 0,
+    players: [hand], dealer, currentPlayerId: null, revision: 0, deadlineEpochMillis: 0,
+    shoe: { decks: 6, size: 312, burned: 1, handStart: 40, commitment: 'a'.repeat(64), reveal: null } };
   assert.ok(validate('ServerMessage', envelope('BLACKJACK_STATE', state)));
   assert.equal(validate('BlackjackDealer', { ...dealer, holeCard: { rank: 'K', suit: 'S' } }), false);
   assert.equal(validate('Card', { rank: '1', suit: 'S' }), false);
-  assert.equal(validate('BlackjackHand', { ...hand, cards: [{ rank: 'A', suit: 'S' }] }), false);
+  assert.ok(validate('BlackjackHand', { ...hand, cards: [], total: 0, status: 'PLAYING' })); // Empty while the dealer shuffles.
+  assert.equal(validate('BlackjackHand', { ...hand, cards: Array(13).fill({ rank: '2', suit: 'S' }) }), false);
+  assert.equal(validate('BlackjackState', { ...state, handPhase: 'RESHUFFLE_MID_SHOE' }), false);
+  assert.equal(validate('BlackjackState', { ...state, shoe: { ...state.shoe, order: [{ rank: 'K', suit: 'S' }] } }), false); // Order only via reveal.
+  assert.equal(validate('BlackjackShoe', { ...state.shoe, commitment: 'not-a-hash' }), false);
+  assert.ok(validate('BlackjackShoe', { ...state.shoe, reveal: { salt: 'b'.repeat(32), order: [{ rank: 'K', suit: 'S' }] } }));
 });

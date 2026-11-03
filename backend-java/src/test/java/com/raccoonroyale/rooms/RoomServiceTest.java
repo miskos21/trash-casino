@@ -132,12 +132,20 @@ class RoomServiceTest {
         var guest = new Guest(); guest.join(host);
         assertEquals("BLACKJACK", guest.last("ROOM_STATE").path("game").asText());
         host.ready(); guest.ready(); host.start();
+        var shuffle = host.last("BLACKJACK_STATE");
+        assertEquals("SHUFFLING", shuffle.path("handPhase").asText()); // The dealer shuffles before any card is dealt.
+        assertEquals(0, shuffle.path("players").get(0).path("cards").size());
+        String commitment = shuffle.path("shoe").path("commitment").asText();
+        assertTrue(commitment.matches("[0-9a-f]{64}"));
+        assertTrue(shuffle.path("shoe").path("reveal").isNull());
+        assertEquals(311, shuffle.path("cardsRemaining").asInt()); // Six decks minus the burn card.
+        rooms.tick();
         String matchId = host.last("BLACKJACK_STATE").path("matchId").asText();
         for(var player : List.of(host, guest)) {
             var state = player.last("BLACKJACK_STATE");
             assertEquals(2, state.path("players").size()); // No agents; the house dealer has no seat or hand.
             assertFalse(state.path("dealer").has("playerId"));
-            if(state.path("phase").asText().equals("IN_PROGRESS")) {
+            if(state.path("handPhase").asText().equals("PLAYING")) {
                 assertEquals(1, state.path("dealer").path("cards").size());
                 assertEquals(1, state.path("dealer").path("hiddenCards").asInt());
             }
@@ -145,7 +153,7 @@ class RoomServiceTest {
         }
         host.send("PLAYER_BID", Map.of("matchId", matchId, "expectedRevision", 0, "bid", Map.of("quantity", 1, "face", 1)));
         assertEquals("ILLEGAL_ACTION", host.last("ERROR").path("code").asText());
-        for(int turn=0; turn<4 && host.last("BLACKJACK_STATE").path("phase").asText().equals("IN_PROGRESS"); turn++) {
+        for(int turn=0; turn<4 && host.last("BLACKJACK_STATE").path("handPhase").asText().equals("PLAYING"); turn++) {
             var state = host.last("BLACKJACK_STATE");
             long revision = state.path("revision").asLong();
             var mover = state.path("currentPlayerId").asText().equals(host.id()) ? host : guest;
@@ -158,22 +166,71 @@ class RoomServiceTest {
             mover.send("BLACKJACK_STAND", Map.of("matchId", matchId, "expectedRevision", revision));
         }
         var done = guest.last("BLACKJACK_STATE");
-        assertEquals("FINISHED", done.path("phase").asText());
-        assertEquals("FINISHED", guest.last("ROOM_STATE").path("phase").asText());
+        assertEquals("RESULT", done.path("handPhase").asText());
+        assertEquals("IN_PROGRESS", done.path("phase").asText()); // The shoe continues with another hand.
+        assertEquals("IN_PROGRESS", guest.last("ROOM_STATE").path("phase").asText());
         assertEquals(0, done.path("dealer").path("hiddenCards").asInt());
         assertTrue(done.path("dealer").path("cards").size() >= 2);
-        for(var hand : done.path("players")) assertFalse(hand.path("outcome").isNull());
+        for(var hand : done.path("players")) {
+            assertFalse(hand.path("outcome").isNull());
+            var tally = hand.path("tally");
+            assertEquals(1, tally.path("wins").asInt() + tally.path("losses").asInt() + tally.path("pushes").asInt());
+        }
+        long resultRevision = done.path("revision").asLong();
+        guest.send("BLACKJACK_STAND", Map.of("matchId", matchId, "expectedRevision", resultRevision));
+        assertEquals("ILLEGAL_ACTION", guest.last("ERROR").path("code").asText()); // No moves between hands.
+        rooms.tick(); // The result pause is zero in tests.
+        var second = host.last("BLACKJACK_STATE");
+        assertEquals(2, second.path("hand").asInt());
+        assertEquals(matchId, second.path("matchId").asText());
+        assertTrue(second.path("cardsRemaining").asInt() < done.path("cardsRemaining").asInt()); // Same shoe, not reshuffled.
+        if(second.path("handPhase").asText().equals("PLAYING")) assertEquals(1, second.path("dealer").path("hiddenCards").asInt());
+        // Record every settled hand this player witnessed, then verify them against the revealed shoe order.
+        var witnessed = new ArrayList<JsonNode>(List.of(done));
+        for(int tick=0; tick<5000 && !host.last("ROOM_STATE").path("phase").asText().equals("FINISHED"); tick++) {
+            rooms.tick();
+            var latest = host.last("BLACKJACK_STATE");
+            if(latest.path("handPhase").asText().equals("RESULT") && latest.path("hand").asInt() != witnessed.getLast().path("hand").asInt())
+                witnessed.add(latest);
+        }
+        var shoe = host.last("BLACKJACK_STATE");
+        var reveal = shoe.path("shoe").path("reveal");
+        var order = new ArrayList<String>();
+        for(var card : reveal.path("order")) order.add(card.path("rank").asText() + card.path("suit").asText());
+        assertEquals(commitment, com.raccoonroyale.games.BlackjackGame.sha256(reveal.path("salt").asText() + ":" + String.join(",", order)));
+        assertEquals(commitment, shoe.path("shoe").path("commitment").asText());
+        assertEquals(312, order.size());
+        for(var hand : witnessed) {
+            // Casino deal order: each player then the dealer, twice; then each player's hits in seat order; then the dealer.
+            var dealt = new ArrayList<String>();
+            var players = hand.path("players"); var dealer = hand.path("dealer").path("cards");
+            for(int round = 0; round < 2; round++) {
+                for(var player : players) dealt.add(card(player.path("cards").get(round)));
+                dealt.add(card(dealer.get(round)));
+            }
+            for(var player : players) for(int i = 2; i < player.path("cards").size(); i++) dealt.add(card(player.path("cards").get(i)));
+            for(int i = 2; i < dealer.size(); i++) dealt.add(card(dealer.get(i)));
+            int start = hand.path("shoe").path("handStart").asInt();
+            assertEquals(order.subList(start, start + dealt.size()), dealt, "hand " + hand.path("hand").asInt());
+        }
+        assertEquals("FINISHED", shoe.path("phase").asText());
+        assertTrue(shoe.path("hand").asInt() > 2);
+        assertTrue(shoe.path("cardsRemaining").asInt() <= 78);
+        assertEquals(0, shoe.path("nextHandAtEpochMillis").asLong());
         host.ready(); guest.ready(); host.start();
         assertNotEquals(matchId, host.last("BLACKJACK_STATE").path("matchId").asText());
+        assertEquals(0, host.last("BLACKJACK_STATE").path("hand").asInt()); // A fresh shoe is shuffled.
+        assertNotEquals(commitment, host.last("BLACKJACK_STATE").path("shoe").path("commitment").asText());
     }
+    static String card(JsonNode card) { return card.path("rank").asText() + card.path("suit").asText(); }
     @Test void blackjackTimeoutStandsAndAgentsPlayTheirOwnHands() throws Exception {
         var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "FROG", "game", "BLACKJACK", "agents", 2));
         assertEquals(List.of("Host", "Don Raccoone", "Foxy"), java.util.stream.StreamSupport.stream(
             host.last("ROOM_STATE").path("participants").spliterator(), false).map(p -> p.path("displayName").asText()).toList());
         host.ready(); host.start();
-        for(int tick=0; tick<40 && host.last("BLACKJACK_STATE").path("phase").asText().equals("IN_PROGRESS"); tick++) rooms.tick();
+        for(int tick=0; tick<40 && !host.last("BLACKJACK_STATE").path("handPhase").asText().equals("RESULT"); tick++) rooms.tick();
         var state = host.last("BLACKJACK_STATE");
-        assertEquals("FINISHED", state.path("phase").asText());
+        assertEquals("RESULT", state.path("handPhase").asText());
         var players = state.path("players");
         assertEquals(3, players.size());
         var status = players.get(0).path("status").asText();
