@@ -49,10 +49,11 @@ public class RoomService {
     private static class Room {
         final String id=UUID.randomUUID().toString(), code;
         final List<Seat> seats=new ArrayList<>();
+        final List<PublicGameEvent> history=new ArrayList<>();
         String hostId, matchId;
         LiarsDiceGame game;
         LiarsDiceGame.RoundResult reveal;
-        long revision, deadline, npcAt, resumeAt, lastActivity;
+        long revision, deadline, npcAt, resumeAt, lastActivity, eventSequence;
         Room(String code) { this.code=code; this.lastActivity=System.currentTimeMillis(); }
         LiarsDiceGame.PublicState state() { return game.viewFor(seats.getFirst().id).publicState(); }
         String phase() { return game==null ? "LOBBY" : state().winnerId()==null ? "IN_PROGRESS" : "FINISHED"; }
@@ -60,9 +61,11 @@ public class RoomService {
     public record RoomSeat(String playerId,String displayName,String avatar,boolean npc,boolean ready,boolean connected) {}
     public record RoomState(String roomId,String roomCode,String phase,String hostId,String youId,List<RoomSeat> participants) {}
     public record Participant(String playerId,String displayName,String avatar,boolean npc,int diceCount) {}
+    public record PublicGameEvent(String id,int round,String type,String actorId,LiarsDiceGame.Bid bid,
+        String loserId,Integer actualCount,String cause) {}
     public record PublicState(String matchId,String phase,int round,List<Participant> participants,
         String currentPlayerId,LiarsDiceGame.Bid lastBid,String lastBidderId,String winnerId,
-        long revision,long deadlineEpochMillis,long resumeAtEpochMillis) {}
+        long revision,long deadlineEpochMillis,long resumeAtEpochMillis,List<PublicGameEvent> history) {}
     public record PlayerState(PublicState publicState,List<Integer> ownDice) {}
     private static class Rejected extends RuntimeException {
         final String code;
@@ -202,7 +205,9 @@ public class RoomService {
             "NOT_READY","All human players must be connected and ready.");
         room.matchId=UUID.randomUUID().toString();
         room.game=new LiarsDiceGame(room.seats.stream().map(s->s.id).toList());
-        room.reveal=null;room.revision=0;room.resumeAt=0;scheduleTurn(room);
+        room.reveal=null;room.revision=0;room.resumeAt=0;room.eventSequence=0;room.history.clear();
+        event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
+        scheduleTurn(room);
         for(Seat s:room.seats) if(s.socket!=null) send(s.socket,"GAME_START",null,Map.of("matchId",room.matchId));
         publish(room);
     }
@@ -214,19 +219,31 @@ public class RoomService {
         require(System.currentTimeMillis()>=room.resumeAt,"ILLEGAL_ACTION","Wait for the dice reveal to finish.");
         LiarsDiceGame.Action action=type.equals("CALL_BLUFF")?new LiarsDiceGame.CallBluff():
             new LiarsDiceGame.Bid(payload.path("bid").path("quantity").asInt(),payload.path("bid").path("face").asInt());
-        apply(room,peer.playerId,action);
+        apply(room,peer.playerId,action,"PLAYER");
     }
-    private void apply(Room room,String actor,LiarsDiceGame.Action action) {
+    private void event(Room room,String type,int round,String actor,LiarsDiceGame.Bid bid,String loser,Integer count,String cause) {
+        room.history.add(new PublicGameEvent(room.matchId+"-"+(++room.eventSequence),round,type,actor,bid,loser,count,cause));
+        if(room.history.size()>60) room.history.removeFirst();
+    }
+    private void apply(Room room,String actor,LiarsDiceGame.Action action,String cause) {
+        var before=room.state();
         var reveal=room.game.apply(actor,action);
         room.revision++;room.lastActivity=System.currentTimeMillis();
+        event(room,action instanceof LiarsDiceGame.Bid?"BID":"CALL_BLUFF",before.round(),actor,
+            action instanceof LiarsDiceGame.Bid bid?bid:before.lastBid(),null,null,cause);
         if(reveal!=null) {
             room.reveal=reveal;room.resumeAt=System.currentTimeMillis()+revealMillis;
+            event(room,"ROUND_RESULT",reveal.round(),actor,reveal.bid(),reveal.loserId(),reveal.actualCount(),cause);
             for(Seat s:room.seats) if(s.socket!=null) sendReveal(room,s.socket);
         }
         if(room.state().winnerId()!=null) {
             room.deadline=0;room.seats.forEach(s->s.ready=s.npc);
+            event(room,"GAME_OVER",before.round(),room.state().winnerId(),null,null,null,null);
             for(Seat s:room.seats) if(s.socket!=null) result(room,s.socket);
-        } else scheduleTurn(room);
+        } else {
+            if(reveal!=null) event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
+            scheduleTurn(room);
+        }
         publish(room);
     }
     private void scheduleTurn(Room room) {
@@ -250,7 +267,8 @@ public class RoomService {
         var view=room.game.viewFor(recipient.id);var state=view.publicState();
         var participants=room.seats.stream().map(s->new Participant(s.id,s.name,s.avatar,s.npc,state.diceCounts().get(s.id))).toList();
         send(recipient.socket,"GAME_STATE",null,new PlayerState(new PublicState(room.matchId,room.phase(),state.round(),participants,
-            state.currentPlayerId(),state.lastBid(),state.lastBidderId(),state.winnerId(),room.revision,room.deadline,room.resumeAt),view.ownDice()));
+            state.currentPlayerId(),state.lastBid(),state.lastBidderId(),state.winnerId(),room.revision,room.deadline,room.resumeAt,
+            List.copyOf(room.history)),view.ownDice()));
     }
     private void publish(Room room) {for(Seat s:room.seats) if(!s.npc) snapshot(room,s);}
     private void sendReveal(Room room,WebSocketSession socket) {
@@ -283,7 +301,8 @@ public class RoomService {
             }
             if(!room.phase().equals("IN_PROGRESS")) continue;
             String actor=room.state().currentPlayerId();Seat seat=seat(room,actor);
-            if((seat.npc||seat.abandoned)?now>=room.npcAt:now>=room.deadline) apply(room,actor,room.game.fallbackFor(actor));
+            if((seat.npc||seat.abandoned)?now>=room.npcAt:now>=room.deadline)
+                apply(room,actor,room.game.fallbackFor(actor),seat.npc?"NPC":seat.abandoned?"UNAVAILABLE":"TIMEOUT");
         }
     }
     public synchronized void invalid(WebSocketSession socket) {error(socket,null,"INVALID_MESSAGE","Message does not match protocol v1.");}

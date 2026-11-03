@@ -53,3 +53,11 @@ test('health is explicitly testnet and never a chain health claim', () => {
   assert.ok(validate('HealthResponse', health));
   assert.equal(validate('HealthResponse', { ...health, network: 'mainnet' }), false);
 });
+
+test('public activity rejects private dice and guest recovery credentials', () => {
+  const event = { id: 'event-1', round: 1, type: 'BID', actorId: 'me', bid: { quantity: 2, face: 3 },
+    loserId: null, actualCount: null, cause: 'PLAYER' };
+  assert.ok(validate('PublicGameEvent', event));
+  assert.equal(validate('PublicGameEvent', { ...event, ownDice: [6, 6, 6] }), false);
+  assert.equal(validate('PublicGameEvent', { ...event, resumeToken: 'a'.repeat(43) }), false);
+});

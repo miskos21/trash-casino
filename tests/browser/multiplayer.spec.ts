@@ -28,14 +28,32 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   await expect(page.getByLabel('Your private dice')).toBeVisible();
   await expect(page.locator('.die-face')).toHaveCount(5);
   await expect(guest.locator('.die-face')).toHaveCount(5);
+  await expect(page.getByLabel('Game actions')).toHaveAttribute('data-turn', 'yours');
+  await expect(guest.getByLabel('Game actions')).toHaveAttribute('data-turn', 'waiting');
+  await expect(page.getByText('FREE MATCH · NO BUY-IN · NO TOKEN REWARD', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'How to play', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'How Liar’s Dice works' })).toBeVisible();
+  await expect(page.getByText(/No buy-in, no tokens at risk, no token reward/)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).not.toBeVisible();
   const ownDice = await guest.locator('.die-face').allTextContents();
   await guest.reload();
   await expect(guest.locator('.die-face')).toHaveCount(5);
   expect(await guest.locator('.die-face').allTextContents()).toEqual(ownDice);
-  await expect(page.getByRole('button', { name: 'Bid', exact: true })).toBeEnabled();
-  await expect(guest.getByRole('button', { name: 'Bid', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Bid', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Make claim', exact: true })).toBeEnabled();
+  await expect(guest.getByRole('button', { name: 'Make claim', exact: true })).toBeDisabled();
+  await page.getByLabel('Claim quantity').fill('2');
+  await page.getByLabel('Claim face').selectOption('3');
+  await page.getByRole('button', { name: 'Make claim', exact: true }).click();
   await expect(guest.getByRole('button', { name: 'Call bluff', exact: true })).toBeEnabled();
+  await expect(guest.getByLabel('Current claim')).toContainText('At least 2');
+  await expect(guest.getByLabel('Current claim').getByRole('img', { name: 'Die 3', exact: true })).toBeVisible();
+  const showMoves = guest.getByRole('button', { name: 'Show moves', exact: true });
+  if (await showMoves.isVisible()) await showMoves.click();
+  await expect(guest.locator('[data-event-type="BID"]').first()).toContainText('Host');
+  await expect(guest.locator('[data-event-type="BID"]').first().getByRole('img', { name: 'Die 3', exact: true })).toBeVisible();
+  const hideMoves = guest.getByRole('button', { name: 'Hide', exact: true });
+  if (await hideMoves.isVisible()) await hideMoves.click();
   await page.screenshot({ path: testInfo.outputPath('multiplayer-table.png') });
 
   const deadline = Date.now() + 140000;
@@ -43,7 +61,7 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
     if (await page.locator('.match-heading h2').textContent().then((s) => s?.endsWith(' wins!'))) break;
     for (const actor of [page, guest]) {
       const bluff = actor.getByRole('button', { name: 'Call bluff', exact: true });
-      const bid = actor.getByRole('button', { name: 'Bid', exact: true });
+      const bid = actor.getByRole('button', { name: 'Make claim', exact: true });
       // The final server action removes these controls. Bound the wait so this
       // transition cannot strand the test in an isVisible/isEnabled race.
       const tryClick = async (button: typeof bluff) => {
@@ -64,6 +82,7 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   }
   await expect(page.locator('.match-heading h2')).toHaveText(/ wins!$/);
   await expect(guest.locator('.match-heading h2')).toHaveText(await page.locator('.match-heading h2').textContent() ?? '');
+  await expect(page.getByText('No buy-in. No tokens spent or awarded.', { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('match-result.png') });
   expect(errors).toEqual([]);
   for (const actor of [page, guest]) {

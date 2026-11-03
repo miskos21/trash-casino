@@ -45,6 +45,13 @@ the private `resumeToken` from `ROOM_SESSION`, never just a room or player ID.
 LLM prompts, chat, or logs. Guest sessions are not wallet ownership proofs.
 `GAME_RESULT.settlement` is always `NOT_STARTED` in the free-play slice.
 
+`PublicGameState.history` contains up to 60 accepted public `PublicGameEvent`
+entries, including claims, bluff calls, round results, round starts, and the
+winner. `cause` distinguishes a player command, a rule-based NPC move, and a
+timeout. No die arrays, credentials, or private player views are allowed in an
+event. IDs are match-scoped and the history resets on rematch. The history field
+is optional for compatibility with older snapshots; the current server sends it.
+
 ## REST
 
 | Method / path | Response definition | Status |

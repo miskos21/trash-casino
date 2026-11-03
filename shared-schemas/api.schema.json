@@ -163,6 +163,14 @@
         "resumeAtEpochMillis": {
           "type": "integer",
           "minimum": 0
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PublicGameEvent"
+          },
+          "maxItems": 60,
+          "description": "Public accepted actions only; no private dice or session credentials. Old snapshots may omit this field."
         }
       },
       "required": [
@@ -1733,6 +1741,85 @@
         "type",
         "requestId",
         "payload"
+      ]
+    },
+    "PublicGameEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "enum": [
+            "ROUND_START",
+            "BID",
+            "CALL_BLUFF",
+            "ROUND_RESULT",
+            "GAME_OVER"
+          ]
+        },
+        "actorId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loserId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actualCount": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 20
+        },
+        "cause": {
+          "enum": [
+            "PLAYER",
+            "NPC",
+            "TIMEOUT",
+            "UNAVAILABLE",
+            null
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "round",
+        "type",
+        "actorId",
+        "bid",
+        "loserId",
+        "actualCount",
+        "cause"
       ]
     }
   }

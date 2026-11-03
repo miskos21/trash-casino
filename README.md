@@ -75,7 +75,7 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
    Don Raccoone occupies the remaining seat. You can also play alone against Don.
 3. Each human clicks **Ready**. The creator clicks **Start match**.
 4. Your private dice appear below the scene. On your turn raise the quantity, or
-   keep it and raise the face, using **Bid**. Once a bid exists, **Call bluff**
+   keep it and raise the face, using **Make claim**. Once a claim exists, **Call bluff**
    reveals the previous round's dice and removes one die from the loser.
 5. Ones are not wild. Turns expire after 30 seconds and use a deterministic legal
    fallback. Don uses the same fallback, without an LLM. The reveal pause is four
@@ -83,6 +83,24 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
 6. Open **Menu** to ready up for a rematch or leave the room. Reloading the same
    tab restores that guest seat and its private view. Use a fresh tab, rather than
    duplicating an existing game tab, to create another player.
+
+**What is at stake?** This is a free match: no buy-in, no tokens at risk, no pot,
+and no token reward or persistent points for winning. Each resolved bluff costs
+the loser one die. The last player with dice wins the match. A claim such as
+“3 × 4” means at least three fours across all participants' dice, not a monetary
+bet. If that claim is met, the bluff caller loses a die; otherwise, the person
+who made the claim loses one. Ones are not wild.
+
+Your turn has a gold marker at the seat, a high-contrast banner, a highlighted
+action panel, and an explicit countdown. **Table activity** records the server's
+accepted public claims, bluff calls, results, NPC moves, and timeout moves, even
+after a reload. The previous reveal remains inspectable there. **How to play**
+explains the rules and the free-match economics in the game.
+
+During the reveal, the 3D dice and the private-dice panel show the same completed
+round. When play resumes, only your newly rolled dice remain visible. Cups sit
+beside each seat's dice row, not on its last die; the overhead camera hides the
+lamp shade so it does not block the table.
 
 Guest recovery is tab-scoped (`sessionStorage`), not NEP-413 or wallet auth. Rooms
 and secrets are in memory: restarting Java ends all matches. A disconnected guest

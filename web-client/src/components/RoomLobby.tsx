@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Avatar } from '@raccoon-royale/shared-schemas/types';
 import type { GameConnection } from '../services/useGameConnection';
+import { GameRules } from './GameRules';
 
 export function RoomLobby({ connection: c, avatar, onStarted }: { connection: GameConnection; avatar: Avatar; onStarted: () => void }) {
   const [name, setName] = useState('Player');
@@ -9,6 +10,8 @@ export function RoomLobby({ connection: c, avatar, onStarted }: { connection: Ga
   const disabled = c.socket !== 'online' || c.pending;
   if (!room) return <section className="room-lobby">
     <h2>Play for free · 1–3 humans + Don Raccoone</h2>
+    <p className="free-play-note">No buy-in. No token rewards. Win by being the last player with dice.</p>
+    <GameRules />
     <label>Your name<input aria-label="Player name" maxLength={32} value={name} onChange={(e) => setName(e.target.value)} /></label>
     <button className="resume-button" disabled={disabled || !name.trim()} onClick={() => c.send({
       protocolVersion: 1, type: 'ROOM_CREATE', requestId: null, payload: { displayName: name.trim(), avatar },

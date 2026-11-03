@@ -53,7 +53,8 @@ export type ApiContract =
   | RoomState
   | ROOM_STATE
   | ROOM_SESSION
-  | ROOM_START;
+  | ROOM_START
+  | PublicGameEvent;
 export type Identifier = string;
 /**
  * Exact base-unit integer string. Services must also enforce u128 and budget limits.
@@ -128,6 +129,22 @@ export interface PublicGameState {
   revision: number;
   deadlineEpochMillis: number;
   resumeAtEpochMillis: number;
+  /**
+   * Public accepted actions only; no private dice or session credentials. Old snapshots may omit this field.
+   *
+   * @maxItems 60
+   */
+  history?: PublicGameEvent[];
+}
+export interface PublicGameEvent {
+  id: Identifier;
+  round: number;
+  type: "ROUND_START" | "BID" | "CALL_BLUFF" | "ROUND_RESULT" | "GAME_OVER";
+  actorId: Identifier | null;
+  bid: Bid | null;
+  loserId: Identifier | null;
+  actualCount: number | null;
+  cause: "PLAYER" | "NPC" | "TIMEOUT" | "UNAVAILABLE" | null;
 }
 export interface PlayerGameState {
   publicState: PublicGameState;

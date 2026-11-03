@@ -6,6 +6,7 @@ import { RoomLobby } from './components/RoomLobby';
 import { MatchHud } from './components/MatchHud';
 import { avatars, type AvatarOption } from './avatars';
 import { GameIcon } from './components/GameIcon';
+import { MatchClockProvider } from './game/MatchClock';
 
 class SceneBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -44,7 +45,7 @@ export function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !menu.current?.open) {
+      if (event.key === 'Escape' && !document.querySelector('dialog[open]')) {
         event.preventDefault();
         setMenuOpen(true);
       }
@@ -70,7 +71,7 @@ export function App() {
     } catch { setNotice('Fullscreen is unavailable. Use your browser’s fullscreen control.'); }
   }
 
-  return <main className="game-shell" aria-label="Raccoon Royale game">
+  return <MatchClockProvider active={status.game?.publicState.phase === 'IN_PROGRESS'}><main className="game-shell" aria-label="Raccoon Royale game">
     <div className="game-scene" aria-label="3D casino table">
       <SceneBoundary><TableScene avatar={myAvatar} room={status.room} game={status.game} reveal={status.reveal} cameraView={camera.view} cameraRevision={camera.revision} /></SceneBoundary>
     </div>
@@ -137,5 +138,5 @@ export function App() {
         <p className="menu-fine-print">Testnet only. No real-money purchases or cashouts. Server-controlled dice and outcomes; no provably fair randomness claim.</p>
       </div>
     </dialog>
-  </main>;
+  </main></MatchClockProvider>;
 }
