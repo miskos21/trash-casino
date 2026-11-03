@@ -53,7 +53,7 @@ export type Identifier = string;
  * Exact base-unit integer string. Services must also enforce u128 and budget limits.
  */
 export type TokenAmount = string;
-export type Avatar = "RACCOON" | "FOX" | "BEAR" | "OWL";
+export type Avatar = "RACCOON" | "FOX" | "BEAR" | "OWL" | "CAPYBARA";
 export type AgreementState =
   | "PROPOSED"
   | "COUNTERED"

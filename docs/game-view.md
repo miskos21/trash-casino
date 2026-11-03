@@ -29,7 +29,7 @@ wallet claim, simulated balance, or playable-room behavior was added.
 ## Verification
 
 Verified on 2026-11-03: `npm test`, `npm run build`, and all four Playwright checks
-passed. The build also includes all four portrait PNGs. Browser checks cover
+passed. The build also includes all five portrait PNGs (capybara added later). Browser checks cover
 desktop and 390px-wide Chromium:
 full-viewport WebGL canvas, no document scrolling, mouse orbit/zoom, real portrait
 loading, avatar selection, menu dismissal and Escape, character/table camera
