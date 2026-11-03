@@ -9,6 +9,7 @@ const palettes: Record<Avatar, { fur: string; light: string; mask: string }> = {
   BEAR: { fur: '#80604a', light: '#bd9671', mask: '#43382e' },
   CAT: { fur: '#b88b58', light: '#f1dec0', mask: '#b86870' },
   CAPYBARA: { fur: '#8f6440', light: '#7d5536', mask: '#2e2119' },
+  FROG: { fur: '#6f8a3a', light: '#d9d29a', mask: '#22301a' },
 };
 
 export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?: Avatar; animated?: boolean }) {
@@ -16,37 +17,54 @@ export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?:
   const colors = palettes[animal];
   const capybara = animal === 'CAPYBARA';
   const cat = animal === 'CAT';
+  const frog = animal === 'FROG';
   useFrame(({ clock }) => {
     if (animated && group.current) group.current.rotation.z = Math.sin(clock.elapsedTime * 1.4) * 0.025;
   });
   return <group ref={group}>
-    <mesh position={[0, 0.55, 0]} castShadow scale={[0.43, 0.58, 0.35]}>
+    <mesh position={[0, frog ? 0.5 : 0.55, 0]} castShadow scale={frog ? [0.5, 0.5, 0.38] : [0.43, 0.58, 0.35]}>
       <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={colors.fur} flatShading />
     </mesh>
-    <mesh position={[0, 1.18, 0]} castShadow scale={capybara ? [0.37, 0.43, 0.46] : [0.48, 0.42, 0.4]}>
+    <mesh position={[0, frog ? 1.12 : 1.18, 0]} castShadow scale={capybara ? [0.37, 0.43, 0.46] : frog ? [0.52, 0.34, 0.42] : [0.48, 0.42, 0.4]}>
       <icosahedronGeometry args={[1, capybara ? 0 : 1]} /><meshStandardMaterial color={colors.fur} flatShading />
     </mesh>
     {[-1, 1].map((side) => <group key={side}>
-      <mesh position={capybara ? [side * 0.2, 1.5, -0.12] : [side * 0.32, 1.51, 0]} rotation={[0, 0, side * -0.25]} castShadow>
-        {capybara ? <sphereGeometry args={[0.085, 6, 4]} /> : animal === 'BEAR' ? <sphereGeometry args={[0.16, 6, 4]} /> : <coneGeometry args={[0.18, 0.37, 4]} />}
-        <meshStandardMaterial color={colors.fur} flatShading />
-      </mesh>
-      {!capybara && <mesh position={[side * 0.19, 1.24, 0.34]} scale={[0.21, 0.14, 0.08]}>
-        <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={cat ? colors.light : colors.mask} />
-      </mesh>}
-      {cat ? <>
-        <mesh position={[side * 0.18, 1.26, 0.413]} scale={[0.075, 0.09, 0.04]}>
-          <sphereGeometry args={[1, 8, 6]} /><meshStandardMaterial color="#d3ac49" roughness={0.3} />
+      {frog ? <>
+        {/* Bulging eyes sit on top of the wide head. */}
+        <mesh position={[side * 0.25, 1.4, 0.14]} castShadow>
+          <sphereGeometry args={[0.14, 7, 5]} /><meshStandardMaterial color={colors.fur} flatShading />
         </mesh>
-        <mesh position={[side * 0.18, 1.26, 0.452]} scale={[0.022, 0.065, 0.018]}>
-          <sphereGeometry args={[1, 8, 6]} /><meshStandardMaterial color="#18211b" />
+        <mesh position={[side * 0.25, 1.43, 0.21]}>
+          <sphereGeometry args={[0.1, 8, 6]} /><meshStandardMaterial color="#d9a531" roughness={0.3} />
         </mesh>
-        {[-1, 1].map((angle) => <mesh key={angle} position={[side * 0.27, 1.09 + angle * 0.035, 0.48]} rotation={[0, 0, side * angle * 0.15]}>
-          <boxGeometry args={[0.24, 0.012, 0.012]} /><meshStandardMaterial color="#f5e6cd" />
-        </mesh>)}
-      </> : <mesh position={capybara ? [side * 0.17, 1.33, 0.3] : [side * 0.18, 1.26, 0.413]}>
-        <sphereGeometry args={[0.045, 8, 6]} /><meshStandardMaterial color="#121b18" roughness={0.25} />
-      </mesh>}
+        <mesh position={[side * 0.25, 1.43, 0.305]} scale={[1.3, 0.6, 0.5]}>
+          <sphereGeometry args={[0.045, 8, 6]} /><meshStandardMaterial color="#121b18" roughness={0.25} />
+        </mesh>
+        <mesh position={[side * 0.07, 1.16, 0.41]}>
+          <sphereGeometry args={[0.022, 6, 4]} /><meshStandardMaterial color={colors.mask} />
+        </mesh>
+      </> : <>
+        <mesh position={capybara ? [side * 0.2, 1.5, -0.12] : [side * 0.32, 1.51, 0]} rotation={[0, 0, side * -0.25]} castShadow>
+          {capybara ? <sphereGeometry args={[0.085, 6, 4]} /> : animal === 'BEAR' ? <sphereGeometry args={[0.16, 6, 4]} /> : <coneGeometry args={[0.18, 0.37, 4]} />}
+          <meshStandardMaterial color={colors.fur} flatShading />
+        </mesh>
+        {!capybara && <mesh position={[side * 0.19, 1.24, 0.34]} scale={[0.21, 0.14, 0.08]}>
+          <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={cat ? colors.light : colors.mask} />
+        </mesh>}
+        {cat ? <>
+          <mesh position={[side * 0.18, 1.26, 0.413]} scale={[0.075, 0.09, 0.04]}>
+            <sphereGeometry args={[1, 8, 6]} /><meshStandardMaterial color="#d3ac49" roughness={0.3} />
+          </mesh>
+          <mesh position={[side * 0.18, 1.26, 0.452]} scale={[0.022, 0.065, 0.018]}>
+            <sphereGeometry args={[1, 8, 6]} /><meshStandardMaterial color="#18211b" />
+          </mesh>
+          {[-1, 1].map((angle) => <mesh key={angle} position={[side * 0.27, 1.09 + angle * 0.035, 0.48]} rotation={[0, 0, side * angle * 0.15]}>
+            <boxGeometry args={[0.24, 0.012, 0.012]} /><meshStandardMaterial color="#f5e6cd" />
+          </mesh>)}
+        </> : <mesh position={capybara ? [side * 0.17, 1.33, 0.3] : [side * 0.18, 1.26, 0.413]}>
+          <sphereGeometry args={[0.045, 8, 6]} /><meshStandardMaterial color="#121b18" roughness={0.25} />
+        </mesh>}
+      </>}
       <mesh position={[side * 0.36, 0.65, 0.28]} rotation={[0.5, 0, side * -0.4]} castShadow>
         <capsuleGeometry args={[0.12, 0.35, 3, 6]} /><meshStandardMaterial color={colors.fur} />
       </mesh>
@@ -64,6 +82,17 @@ export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?:
       {[-1, 1].map((side) => <mesh key={side} position={[side * 0.04, 0.96, 0.595]} castShadow>
         <boxGeometry args={[0.065, 0.15, 0.05]} /><meshStandardMaterial color="#fffdf5" roughness={0.35} />
       </mesh>)}
+    </> : frog ? <>
+      {/* Tilted open front half-cylinder just outside the head reads as a wide smile. */}
+      <mesh position={[0, 1.07, 0]} rotation={[0.15, 0, 0]} scale={[0.515, 0.03, 0.435]}>
+        <cylinderGeometry args={[1, 1, 1, 14, 1, true, -Math.PI / 2, Math.PI]} /><meshStandardMaterial color={colors.mask} flatShading />
+      </mesh>
+      <mesh position={[0, 0.9, 0.1]} scale={[0.36, 0.11, 0.26]}>
+        <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={colors.light} flatShading />
+      </mesh>
+      <mesh position={[0, 0.52, 0.2]} scale={[0.34, 0.38, 0.22]}>
+        <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={colors.light} flatShading />
+      </mesh>
     </> : <>
       <mesh position={[0, 1.08, 0.39]} scale={[0.23, 0.16, 0.18]}>
         <icosahedronGeometry args={[1, 0]} /><meshStandardMaterial color={colors.light} flatShading />

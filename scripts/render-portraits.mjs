@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const destination = new URL('../web-client/public/portraits/', import.meta.url);
-const allAvatars = ['RACCOON', 'FOX', 'BEAR', 'CAT', 'CAPYBARA'];
+const allAvatars = ['RACCOON', 'FOX', 'BEAR', 'CAT', 'CAPYBARA', 'FROG'];
 const requested = process.argv.slice(2);
 if (requested.some((avatar) => !allAvatars.includes(avatar))) throw new Error('Unknown avatar');
 await mkdir(destination, { recursive: true });

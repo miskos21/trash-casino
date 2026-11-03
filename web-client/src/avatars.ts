@@ -7,4 +7,5 @@ export const avatars: AvatarOption[] = [
   { id: 'BEAR', name: 'Bear', portrait: '/portraits/bear.png' },
   { id: 'CAT', name: 'Cat', portrait: '/portraits/cat.png' },
   { id: 'CAPYBARA', name: 'Capybara', portrait: '/portraits/capybara.png' },
+  { id: 'FROG', name: 'Frog', portrait: '/portraits/frog.png' },
 ];
