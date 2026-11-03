@@ -49,7 +49,7 @@ button:disabled { cursor: not-allowed; }
 .menu-heading h1 { font: normal 26px Georgia, serif; line-height: 1.15; margin: 0; letter-spacing: -0.02em; }
 .menu-heading .hud-button { min-width: 32px; min-height: 32px; margin: -7px -9px 0 0; }
 .menu-card h2 { margin: 0 0 13px; color: #bec7b4; font-size: 11px; font-weight: 500; }
-.avatar-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; margin-bottom: 24px; }
+.avatar-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-bottom: 24px; }
 .avatar-button { position: relative; min-width: 0; padding: 4px 4px 8px; border: 1px solid #a1ab8333; border-radius: 9px; background: #15241d; color: #bdc5b1; font-size: 10px; }
 .avatar-button .portrait { display: block; width: 100%; aspect-ratio: 1; border-radius: 5px; margin-bottom: 8px; }
 .avatar-button:hover { background: #354132; }

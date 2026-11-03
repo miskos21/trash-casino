@@ -57,7 +57,7 @@ try {
   const roomCode = host.latest('ROOM_SESSION').roomCode;
   await host.wait((m) => m.type === 'ROOM_STATE');
   const guest = await new Peer().open();
-  await guest.command('ROOM_JOIN', { displayName: 'Guest', avatar: 'CAPYBARA', roomCode }, 'ROOM_SESSION');
+  await guest.command('ROOM_JOIN', { displayName: 'Guest', avatar: 'FROG', roomCode }, 'ROOM_SESSION');
   await guest.wait((m) => m.type === 'ROOM_STATE');
   const attacker = await new Peer().open();
   const rejected = await attacker.command('PLAYER_RECONNECT', { roomId, resumeToken: 'a'.repeat(43) }, 'ERROR');

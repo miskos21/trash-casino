@@ -13,7 +13,7 @@ Implemented locally:
 
 - npm workspaces, lockfile, Java 21 Maven wrapper, environment template, Docker Compose.
 - React + TypeScript + Vite + React Three Fiber + drei + Zustand + Tailwind.
-- Full-window procedural casino room, table, cups, five placeholder animal
+- Full-window procedural casino room, table, cups, six placeholder animal
   variants, rendered face portraits, 360° orbit, character close-up, and in-game menu.
 - Spring Boot REST health and schema-validated WebSocket PING/PONG; the browser
   reports actual API and WebSocket availability with a retry button.
