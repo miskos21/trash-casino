@@ -7,7 +7,7 @@ const palettes: Record<Avatar, { fur: string; light: string; mask: string }> = {
   RACCOON: { fur: '#8b8d83', light: '#dad5bd', mask: '#30342f' },
   FOX: { fur: '#bf7746', light: '#f0dcb7', mask: '#613f2c' },
   BEAR: { fur: '#80604a', light: '#bd9671', mask: '#43382e' },
-  OWL: { fur: '#9b8864', light: '#e3d0a0', mask: '#5d503a' },
+  CAT: { fur: '#b88b58', light: '#f1dec0', mask: '#b86870' },
   CAPYBARA: { fur: '#8f6440', light: '#7d5536', mask: '#2e2119' },
 };
 
@@ -15,6 +15,7 @@ export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?:
   const group = useRef<Group>(null);
   const colors = palettes[animal];
   const capybara = animal === 'CAPYBARA';
+  const cat = animal === 'CAT';
   useFrame(({ clock }) => {
     if (animated && group.current) group.current.rotation.z = Math.sin(clock.elapsedTime * 1.4) * 0.025;
   });
@@ -31,11 +32,21 @@ export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?:
         <meshStandardMaterial color={colors.fur} flatShading />
       </mesh>
       {!capybara && <mesh position={[side * 0.19, 1.24, 0.34]} scale={[0.21, 0.14, 0.08]}>
-        <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={animal === 'OWL' ? colors.light : colors.mask} />
+        <icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={cat ? colors.light : colors.mask} />
       </mesh>}
-      <mesh position={capybara ? [side * 0.17, 1.33, 0.3] : [side * 0.18, 1.26, 0.413]}>
+      {cat ? <>
+        <mesh position={[side * 0.18, 1.26, 0.413]} scale={[0.075, 0.09, 0.04]}>
+          <sphereGeometry args={[1, 8, 6]} /><meshStandardMaterial color="#d3ac49" roughness={0.3} />
+        </mesh>
+        <mesh position={[side * 0.18, 1.26, 0.452]} scale={[0.022, 0.065, 0.018]}>
+          <sphereGeometry args={[1, 8, 6]} /><meshStandardMaterial color="#18211b" />
+        </mesh>
+        {[-1, 1].map((angle) => <mesh key={angle} position={[side * 0.27, 1.09 + angle * 0.035, 0.48]} rotation={[0, 0, side * angle * 0.15]}>
+          <boxGeometry args={[0.24, 0.012, 0.012]} /><meshStandardMaterial color="#f5e6cd" />
+        </mesh>)}
+      </> : <mesh position={capybara ? [side * 0.17, 1.33, 0.3] : [side * 0.18, 1.26, 0.413]}>
         <sphereGeometry args={[0.045, 8, 6]} /><meshStandardMaterial color="#121b18" roughness={0.25} />
-      </mesh>
+      </mesh>}
       <mesh position={[side * 0.36, 0.65, 0.28]} rotation={[0.5, 0, side * -0.4]} castShadow>
         <capsuleGeometry args={[0.12, 0.35, 3, 6]} /><meshStandardMaterial color={colors.fur} />
       </mesh>
@@ -49,6 +60,9 @@ export function AnimalAvatar({ animal = 'RACCOON', animated = true }: { animal?:
       </mesh>
       {[-1, 1].map((side) => <mesh key={side} position={[side * 0.06, 1.13, 0.59]}>
         <sphereGeometry args={[0.028, 6, 4]} /><meshStandardMaterial color={colors.mask} />
+      </mesh>)}
+      {[-1, 1].map((side) => <mesh key={side} position={[side * 0.04, 0.96, 0.595]} castShadow>
+        <boxGeometry args={[0.065, 0.15, 0.05]} /><meshStandardMaterial color="#fffdf5" roughness={0.35} />
       </mesh>)}
     </> : <>
       <mesh position={[0, 1.08, 0.39]} scale={[0.23, 0.16, 0.18]}>

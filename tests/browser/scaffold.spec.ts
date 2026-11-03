@@ -33,18 +33,19 @@ test('fills the viewport, orbits the table, and selects a real portrait through 
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   const menu = page.getByRole('dialog');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('img')).toHaveCount(4);
+  await expect(menu.getByRole('img')).toHaveCount(5);
   for (const image of await menu.getByRole('img').all()) {
     expect(await image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true);
   }
-  await menu.getByRole('button', { name: 'Fox', exact: true }).click();
-  await expect(menu.getByRole('button', { name: 'Fox', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(menu.getByRole('button', { name: 'Owl', exact: true })).toHaveCount(0);
+  await menu.getByRole('button', { name: 'Cat', exact: true }).click();
+  await expect(menu.getByRole('button', { name: 'Cat', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(menu.getByRole('button', { name: 'Raccoon', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await expect(menu.getByRole('button', { name: /Play Liar/ })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath('menu.png') });
   await menu.getByRole('button', { name: 'Back to table' }).click();
   await expect(menu).not.toBeVisible();
-  await expect(page.getByRole('button', { name: 'Choose character. Current: Fox', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose character. Current: Cat', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Look at my character' }).click();
   await page.screenshot({ path: testInfo.outputPath('my-character.png') });
   await page.getByRole('button', { name: 'Reset table camera' }).click();

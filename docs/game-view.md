@@ -41,3 +41,11 @@ ResizeObserver updated it. The check now waits for the final canvas bounds rathe
 than treating initialization as a permanent layout. No backend source changed.
 The existing large Three.js build chunk and Clock deprecation warning remain.
 Firefox, Safari, and physical touch devices have not been checked.
+
+## Character adjustments
+
+Capybara has two separate white front incisors on its muzzle. The former owl
+slot is now `CAT` / Cat, with cream cheeks, amber slit-pupil eyes, a pink nose,
+and whiskers. Both PNG portraits were regenerated from the updated models.
+The shared avatar enum and generated TypeScript declarations use `CAT` as well.
+Render only these two portraits with `npm run portraits:render -- CAT CAPYBARA`.
