@@ -35,10 +35,12 @@ Implemented locally:
   Blackjack uses a larger table with a separate four-column area for each hand;
   every card keeps the same physical size as longer hands wrap into more rows.
 
-Wallet signing, LLM decisions/chat, negotiations, starter grants, contracts,
-buy-in, and settlement are not
-implemented. Contract and bridge directories are reservations; no contract IDs
-or testnet deployments exist. No blockchain mocks or simulated balances exist.
+Wallet signing, LLM decisions/chat, negotiations, starter grants, buy-in, and
+settlement are not implemented in the game. The `trash-token` and `trash-casino`
+contracts exist and pass unit and NEAR Sandbox tests ([blockchain/](blockchain/README.md)),
+but they are **not deployed to testnet and not connected** to the backend. The bridge
+directory is a reservation; no contract IDs exist. No blockchain mocks or simulated
+balances exist.
 The future offline LLM mode must be labelled `TEMPORARY MOCK` when implemented.
 The frontend's HTTP-failure unit test uses a labelled `TEMPORARY MOCK` response
 inside that test only; application status checks always use the real backend.
@@ -48,9 +50,8 @@ inside that test only; application status checks always use the real backend.
 Prerequisites: Linux, Node.js 22.12+ (24 LTS recommended), npm 10+, Java 21 JDK,
 and `curl` or `wget` plus `unzip` for the Maven wrapper. Maven is downloaded by
 `./mvnw` on first use. Docker Engine with Compose v2+ is optional for the database
-profile. Rust, NEAR CLI, wallet libraries, and contract toolchains are not needed
-for this milestone; choose and document them against current NEAR docs when
-blockchain integration begins.
+profile. Rust, NEAR CLI, and the contract toolchain are needed only for the
+contracts; see [blockchain/README.md](blockchain/README.md).
 
 From the repository root:
 
@@ -252,7 +253,8 @@ cd backend-java
 rules match, run `./mvnw -Dtest=LiarsDiceGameTest test` inside `backend-java`.
 This exercises legal deterministic fallback turns until one participant wins;
 it is not a browser/chain end-to-end demo. `node scripts/smoke.mjs` checks running
-transport independently. Contract and bridge tests do not exist yet.
+transport independently. Contract tests run on Linux, macOS, or WSL2:
+`cd blockchain && ./scripts/build.sh && ./scripts/test.sh`. Bridge tests do not exist yet.
 
 Validation results and remaining verification limits are recorded in
 [milestone 1](docs/milestone-1.md). A Three.js production chunk currently triggers
@@ -273,8 +275,10 @@ backend-java/         Spring Boot transport and pure Java dice engine
 shared-schemas/       JSON Schema source and generated TypeScript API types
 near-bridge/          reserved TypeScript workspace, no signing implementation
 blockchain/
-  trash-token/        reserved NEP-141/145 reference-based token
-  trash-casino/       reserved escrow, refunds, and agent spending limits
+  trash-token/        TRASH: NEP-141/145 reference token + burn (not deployed)
+  trash-casino/       escrow, settlement, refunds, contract-enforced NPC limits (not deployed)
+  integration-tests/  NEAR Sandbox tests for both contracts
+  scripts/            build, test, and testnet deploy scripts
 docs/                architecture, specification, and milestone verification
 ```
 

@@ -21,7 +21,7 @@ flowchart LR
   Java -. future room service .-> Engine[Pure Java Liar's Dice engine]
   Java -. postgres profile .-> Postgres[(PostgreSQL)]
   Java -. future confirmed operations .-> Bridge[near-bridge / reserved]
-  Bridge -. future testnet only .-> Contracts[trash-token + trash-casino / reserved]
+  Bridge -. future testnet only .-> Contracts[trash-token + trash-casino / sandbox-tested, not deployed]
 ```
 
 Solid connections are implemented. Dashed connections are reserved or optional.
@@ -38,7 +38,7 @@ API. Transport connectivity does not prove wallet ownership or chain health.
 | `backend-java/games` | Pure Java rules, SecureRandom, private views, reveal, fallback | Room lifecycle, scheduled timeouts, NPC service |
 | `shared-schemas` | Draft 2020-12 contracts, generated TS, AJV tests | Versioned schema changes alongside consumers |
 | `near-bridge` | Workspace reservation only | Final execution verification, no LLM key access |
-| `blockchain` | Contract reservations only | NEP-141 reference + casino limits and sandbox tests |
+| `blockchain` | `trash-token` (NEP-141 reference + burn) and `trash-casino` (escrow, settlement, refunds, `agent_pay` limits); unit + NEAR Sandbox tests; testnet deploy script, not yet run. See [blockchain/README.md](../blockchain/README.md) | Testnet deployment, then bridge integration |
 
 Other Java packages (`auth`, `players`, `rooms`, `agents`, `negotiations`, `economy`,
 `shop`, `blockchain`, `persistence`) will be added as working slices, rather than

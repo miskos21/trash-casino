@@ -13,3 +13,6 @@ target/
 .tools/
 playwright-report/
 test-results/
+# Built contract Wasm and local sandbox rehearsal output
+blockchain/res/
+blockchain/deployments/sandbox.json

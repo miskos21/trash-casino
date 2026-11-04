@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["trash-token", "trash-casino", "integration-tests"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+license = "MIT"
+repository = "https://github.com/miskos21/trash-casino"
+
+[workspace.dependencies]
+near-sdk = "5.29"
+near-contract-standards = "5.29"
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+# Token amounts are u128; overflow must abort, never wrap.
+overflow-checks = true

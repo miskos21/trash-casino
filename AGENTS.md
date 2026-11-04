@@ -286,7 +286,7 @@ a milestone done. Fill in the commands below as each component is created.
 ```bash
 # Client tests and build: npm ci && npm test && npm run build
 # Backend tests: cd backend-java && ./mvnw verify
-# Contract tests: not implemented (reserved directories only)
+# Contract tests (Linux/macOS/WSL2): cd blockchain && ./scripts/build.sh && ./scripts/test.sh
 # Bridge tests: not implemented (reserved workspace only)
 # Local stack: cp .env.example .env && docker compose up --build -d; npm run dev
 # Headless transport check (running backend): node scripts/smoke.mjs
