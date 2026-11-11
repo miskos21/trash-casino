@@ -301,9 +301,11 @@ impl Contract {
 
     // ---------------------------------------------------------------- settler
 
-    /// Opens a game for exactly the listed players. Registered agents in `players`
-    /// are seated immediately with house money. `house_stake` adds house money to
-    /// the pot for games against the house. Humans pay with `join_game`.
+    /// Opens a fully funded game for exactly the listed players. Each human's buy-in
+    /// is taken from their casino balance right away (players sign only deposits and
+    /// withdrawals); the whole call fails if anyone lacks the balance. Registered
+    /// agents are seated with house money. `house_stake` adds house money to the pot
+    /// for games against the house.
     pub fn create_game(
         &mut self,
         game_id: String,
@@ -342,7 +344,7 @@ impl Contract {
             seats.push(Seat {
                 account_id: player.clone(),
                 is_agent,
-                deposited: is_agent,
+                deposited: true,
                 refunded: false,
             });
         }
@@ -352,15 +354,19 @@ impl Contract {
             .checked_mul(agent_count)
             .and_then(|v| v.checked_add(house_stake))
             .unwrap_or_else(|| env::panic_str("Amount overflow"));
-        buy_in
+        let total = buy_in
             .0
             .checked_mul(players.len() as u128)
             .and_then(|v| v.checked_add(house_stake))
             .unwrap_or_else(|| env::panic_str("Amount overflow"));
+        for seat in seats.iter().filter(|s| !s.is_agent) {
+            let error = format!("{} has insufficient casino balance", seat.account_id);
+            self.debit(&seat.account_id, buy_in.0, &error);
+        }
         if from_house > 0 {
             self.take_house_stake(from_house);
-            self.total_escrow += from_house;
         }
+        self.total_escrow += total;
 
         let now = env::block_timestamp();
         let game = Game {
@@ -371,7 +377,7 @@ impl Contract {
             state: GameState::Open,
             created_at_ns: U64(now),
             deadline_ns: U64(now + timeout_seconds * 1_000_000_000),
-            total_deposited: U128(from_house),
+            total_deposited: U128(total),
             payouts: vec![],
             house_payout: U128(0),
         };
@@ -462,39 +468,6 @@ impl Contract {
     }
 
     // ---------------------------------------------------------------- players
-
-    /// Moves the buy-in from the caller's casino balance into the game escrow.
-    pub fn join_game(&mut self, game_id: String) {
-        let player = env::predecessor_account_id();
-        let now = env::block_timestamp();
-        let game = self
-            .games
-            .get(&game_id)
-            .unwrap_or_else(|| env::panic_str("Unknown game"));
-        require!(game.state == GameState::Open, "Game is not open");
-        require!(now <= game.deadline_ns.0, "Buy-in deadline has passed");
-        let seat = game
-            .seats
-            .iter()
-            .find(|s| s.account_id == player)
-            .unwrap_or_else(|| env::panic_str("Caller has no seat in this game"));
-        require!(!seat.deposited, "Buy-in already paid");
-        let buy_in = game.buy_in.0;
-        self.debit(&player, buy_in, "Insufficient casino balance for the buy-in");
-        self.total_escrow += buy_in;
-        let game = self.game_mut(&game_id);
-        let seat = game
-            .seats
-            .iter_mut()
-            .find(|s| s.account_id == player)
-            .unwrap_or_else(|| env::panic_str("Caller has no seat in this game"));
-        seat.deposited = true;
-        game.total_deposited = U128(game.total_deposited.0 + buy_in);
-        emit(
-            "buy_in",
-            json!({ "game_id": game_id, "account_id": player, "amount": U128(buy_in) }),
-        );
-    }
 
     /// After the deadline, any seated player can expire an unsettled game; every
     /// deposit is then refunded. This guarantees funds never stay stuck.

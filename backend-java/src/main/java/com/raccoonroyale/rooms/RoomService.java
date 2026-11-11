@@ -38,6 +38,8 @@ public class RoomService {
     static final long AGENT_TALK_GAP_MS = 15_000; // Unprompted table talk after a move, per agent.
     /** On-chain game deadline: after it, any player can claim a refund if the server vanished. */
     static final long CHAIN_GAME_TIMEOUT_SECONDS = 2 * 3600;
+    /** House stake is 1.5x the bets: 3 players x 50 x 1.5 = 225 stays under the 250 TRASH per-game house limit. */
+    static final int MAX_BLACKJACK_BET_TRASH = 50;
     private final Protocol protocol;
     private final AgentBrain brain;
     private final AgentActionParser parser;
@@ -46,24 +48,22 @@ public class RoomService {
     private final SecureRandom random = new SecureRandom();
     private final Map<String, Peer> peers = new HashMap<>();
     private final Map<String, Room> rooms = new LinkedHashMap<>();
-    private final long turnMillis, npcMillis, revealMillis, agentTimeoutMillis, fundingMillis, pollMillis;
+    private final long turnMillis, npcMillis, revealMillis, agentTimeoutMillis;
     @Autowired
     public RoomService(Protocol protocol, AgentBrain brain, AgentActionParser parser, ChainGateway chain, WalletAuthService wallets,
         @Value("$" + "{app.game.turn-timeout-ms:30000}") long turnMillis,
         @Value("$" + "{app.game.npc-delay-ms:1100}") long npcMillis,
         @Value("$" + "{app.game.reveal-ms:4000}") long revealMillis,
-        @Value("$" + "{app.llm.timeout-ms:5000}") long agentTimeoutMillis,
-        @Value("$" + "{app.chain.funding-timeout-ms:180000}") long fundingMillis,
-        @Value("$" + "{app.chain.poll-ms:2500}") long pollMillis) {
+        @Value("$" + "{app.llm.timeout-ms:5000}") long agentTimeoutMillis) {
         this.protocol = protocol; this.brain = brain; this.parser = parser; this.chain = chain; this.wallets = wallets;
         this.turnMillis = turnMillis; this.npcMillis = npcMillis; this.revealMillis = revealMillis;
-        this.agentTimeoutMillis = agentTimeoutMillis; this.fundingMillis = fundingMillis; this.pollMillis = pollMillis;
+        this.agentTimeoutMillis = agentTimeoutMillis;
     }
     /** Agent tests: free play only (chain disabled). */
     public RoomService(Protocol protocol, AgentBrain brain, AgentActionParser parser,
         long turnMillis, long npcMillis, long revealMillis, long agentTimeoutMillis) {
         this(protocol, brain, parser, ChainGateway.disabled(), new WalletAuthService(ChainGateway.disabled(), "trashnino"),
-            turnMillis, npcMillis, revealMillis, agentTimeoutMillis, 180_000, 2_500);
+            turnMillis, npcMillis, revealMillis, agentTimeoutMillis);
     }
     /** Rule tests: the TEMPORARY MOCK brain answers synchronously, so ticks stay deterministic. Chain disabled. */
     public RoomService(Protocol protocol, long turnMillis, long npcMillis, long revealMillis) {
@@ -94,13 +94,23 @@ public class RoomService {
     }
     /** Paid-room state. Changes only after confirmed final execution outcomes. */
     private static class Economy {
+        final boolean blackjack;
+        /** Liar's Dice buy-in, or the Blackjack bet per hand, in yoctoTRASH. */
+        final BigInteger stake;
         String gameId, funding="NOT_STARTED", settlement="NOT_STARTED", txHash, message;
-        long deadline, nextPoll;
         boolean inFlight, cancelSent;
         BigInteger pot=BigInteger.ZERO;
         final Set<String> paid=new LinkedHashSet<>();
         List<RoomPayout> payouts=List.of();
-        boolean active() { return funding.equals("CREATING")||funding.equals("AWAITING_PAYMENTS")||funding.equals("CANCELLING"); }
+        /** On-chain games created and not yet settled or cancelled. */
+        final Set<String> open=new LinkedHashSet<>();
+        // Blackjack: the hand the current on-chain game is for, and who is in it (seat ID -> account).
+        int readyHand, settledHand;
+        Map<String,String> handSeats=Map.of();
+        final Set<String> broke=new HashSet<>();
+        boolean requestHand, stop;
+        Economy(boolean blackjack,BigInteger stake) {this.blackjack=blackjack;this.stake=stake;}
+        boolean active() { return funding.equals("CREATING")||funding.equals("CANCELLING"); }
     }
     private static class Room {
         final String id=UUID.randomUUID().toString(), code, gameType;
@@ -230,11 +240,17 @@ public class RoomService {
         Seat foxy=agents>=2?new Seat("foxy-"+UUID.randomUUID(),"Foxy","FOX",null,true,null):null;
         if(paid) {
             require(chain.enabled(),"CHAIN_DISABLED","Paid rooms are not configured on this server. Play free instead.");
-            require(room.gameType.equals("LIARS_DICE"),"INVALID_MESSAGE","Paid rooms are Liar’s Dice only.");
             human.accountId=walletAccount(payload);
-            if(don!=null) don.accountId=chain.agentAccount("don").orElseThrow(()->new Rejected("CHAIN_DISABLED","Don has no NEAR account on this server."));
-            if(foxy!=null) foxy.accountId=chain.agentAccount("foxy").orElseThrow(()->new Rejected("CHAIN_DISABLED","Foxy has no NEAR account on this server."));
-            room.economy=new Economy();
+            if(room.gameType.equals("BLACKJACK")) {
+                // Agents play Blackjack for show only; the house is the counterparty.
+                int bet=payload.path("betTrash").asInt(1);
+                require(bet>=1&&bet<=MAX_BLACKJACK_BET_TRASH,"INVALID_MESSAGE","Bet 1–"+MAX_BLACKJACK_BET_TRASH+" TRASH per hand.");
+                room.economy=new Economy(true,ChainGateway.ONE_TRASH.multiply(BigInteger.valueOf(bet)));
+            } else {
+                if(don!=null) don.accountId=chain.agentAccount("don").orElseThrow(()->new Rejected("CHAIN_DISABLED","Don has no NEAR account on this server."));
+                if(foxy!=null) foxy.accountId=chain.agentAccount("foxy").orElseThrow(()->new Rejected("CHAIN_DISABLED","Foxy has no NEAR account on this server."));
+                room.economy=new Economy(false,chain.buyIn());
+            }
         }
         room.hostId=human.id;room.seats.add(human);
         if(don!=null) room.seats.add(don);
@@ -319,73 +335,171 @@ public class RoomService {
         else beginMatch(room);
     }
     /**
-     * Paid rooms: open the game on-chain first. Agents are seated with house money by
-     * the contract; every human pays the buy-in with their own wallet (join_game).
-     * The match starts only after the chain shows every seat paid.
+     * Paid rooms: open the game on-chain first. The contract takes every human's stake
+     * from their casino balance (players sign only deposits and withdrawals) and seats
+     * agents with house money. Liar's Dice is one on-chain game per match; Blackjack is
+     * one on-chain game per hand, opened while the previous hand's result is shown.
      */
     private void beginFunding(Room room) {
         var e=room.economy;
-        e.gameId="ld-"+UUID.randomUUID();
         e.funding="CREATING";e.settlement="NOT_STARTED";e.txHash=null;e.message=null;e.payouts=List.of();
-        e.paid.clear();e.inFlight=true;e.cancelSent=false;
-        e.deadline=System.currentTimeMillis()+fundingMillis;
-        e.pot=chain.buyIn().multiply(BigInteger.valueOf(room.seats.size()));
+        e.paid.clear();e.cancelSent=false;e.readyHand=0;e.settledHand=0;e.broke.clear();e.stop=false;e.requestHand=false;
         room.lastActivity=System.currentTimeMillis();
-        List<String> accounts=room.seats.stream().map(s->s.accountId).toList();
-        String roomId=room.id, gameId=e.gameId;
-        log.info("paid_room_funding room={} game={} players={}",room.code,gameId,accounts);
-        chain.createGame(gameId,chain.buyIn(),accounts,CHAIN_GAME_TIMEOUT_SECONDS)
-            .whenComplete((result,error)->onGameCreated(roomId,gameId,result,error));
+        if(e.blackjack) {
+            room.blackjack=null; // A new shoe starts after the first hand is funded.
+            openHand(room,1);
+        } else {
+            e.gameId="ld-"+UUID.randomUUID();e.inFlight=true;
+            e.pot=e.stake.multiply(BigInteger.valueOf(room.seats.size()));
+            List<String> accounts=room.seats.stream().map(s->s.accountId).toList();
+            String roomId=room.id, gameId=e.gameId;
+            log.info("paid_room_funding room={} game={} players={}",room.code,gameId,accounts);
+            chain.createGame(gameId,e.stake,accounts,null,CHAIN_GAME_TIMEOUT_SECONDS)
+                .whenComplete((result,error)->onGameCreated(roomId,gameId,result,error));
+        }
         publish(room);
     }
-    private Economy currentEconomy(String roomId,String gameId) {
-        Room room=rooms.get(roomId);
-        return room==null||room.economy==null||!gameId.equals(room.economy.gameId) ? null : room.economy;
+    private static String chainError(ChainGateway.TxResult result,Throwable error) {
+        return error!=null||result==null ? "bridge unavailable" : String.valueOf(result.error());
+    }
+    /** The seat whose account the contract named in an insufficient-balance error, if any. */
+    private static Seat brokeSeat(Room room,String error) {
+        return room.seats.stream().filter(s->s.accountId!=null&&error.contains(s.accountId+" has insufficient casino balance"))
+            .findFirst().orElse(null);
     }
     synchronized void onGameCreated(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
         boolean ok=error==null&&result!=null&&result.ok();
-        Economy e=currentEconomy(roomId,gameId);
-        if(e==null) { // The room vanished while the transaction ran: refund everyone.
+        Room room=rooms.get(roomId);
+        if(room==null||room.economy==null||!gameId.equals(room.economy.gameId)) { // Room gone: refund everyone.
             if(ok) chain.cancelGame(gameId);
             return;
         }
+        var e=room.economy;
         e.inFlight=false;
-        Room room=rooms.get(roomId);
-        if(!ok) {
+        if(ok) {
+            e.open.add(gameId);
+            if(e.funding.equals("CREATING")) {
+                e.funding="FUNDED";
+                room.seats.forEach(s->e.paid.add(s.id));
+                log.info("paid_room_funded room={} game={}",room.code,gameId);
+                beginMatch(room);
+                return;
+            } // CANCELLING: tick() cancels the game now that it exists.
+        } else {
+            String reason=chainError(result,error);
+            Seat broke=brokeSeat(room,reason);
             e.funding="FAILED";
-            e.message="Could not open the game on NEAR Testnet: "+(error!=null?"bridge unavailable":result.error());
+            e.message=broke!=null
+                ? broke.name+" does not have "+trash(e.stake)+" TRASH in the casino. Deposit first, then start again."
+                : "Could not open the game on NEAR Testnet: "+reason;
             room.seats.forEach(s->s.ready=s.npc);
-        } else if(e.funding.equals("CREATING")) {
-            e.funding="AWAITING_PAYMENTS";e.nextPoll=0;
-        } // CANCELLING: tick() sends the cancellation now that the game exists.
+        }
         publish(room);
     }
-    synchronized void onGameStatus(String roomId,String gameId,Optional<ChainGateway.ChainGame> game,Throwable error) {
-        Economy e=currentEconomy(roomId,gameId);
-        if(e==null) return;
-        e.inFlight=false;
-        if(!e.funding.equals("AWAITING_PAYMENTS")) return;
-        e.nextPoll=System.currentTimeMillis()+pollMillis;
-        if(error!=null||game.isEmpty()) return; // Transient: poll again.
+    /** Blackjack: open the on-chain game for one hand. Players who ran out of casino TRASH sit out. */
+    private void openHand(Room room,int hand) {
+        var e=room.economy;
+        var players=room.seats.stream().filter(s->!s.npc&&!s.abandoned&&!e.broke.contains(s.id)).toList();
+        e.requestHand=false;
+        if(players.isEmpty()) {e.stop=true;return;}
+        String gameId="bj-"+UUID.randomUUID(), roomId=room.id;
+        Map<String,String> accounts=new LinkedHashMap<>();
+        players.forEach(s->accounts.put(s.id,s.accountId));
+        BigInteger houseStake=e.stake.multiply(BigInteger.valueOf(3L*players.size())).divide(BigInteger.TWO); // Covers 3:2 wins.
+        e.inFlight=true;
+        chain.createGame(gameId,e.stake,List.copyOf(accounts.values()),houseStake,CHAIN_GAME_TIMEOUT_SECONDS)
+            .whenComplete((result,error)->onHandCreated(roomId,gameId,hand,accounts,result,error));
+    }
+    synchronized void onHandCreated(String roomId,String gameId,int hand,Map<String,String> accounts,
+        ChainGateway.TxResult result,Throwable error) {
+        boolean ok=error==null&&result!=null&&result.ok();
         Room room=rooms.get(roomId);
-        if(!game.get().state().equals("OPEN")) {
-            e.funding="FAILED";e.message="The on-chain game is "+game.get().state()+".";
-            room.seats.forEach(s->s.ready=s.npc);publish(room);return;
+        if(room==null||room.economy==null) {if(ok) chain.cancelGame(gameId);return;}
+        var e=room.economy;
+        e.inFlight=false;
+        if(ok) {
+            e.open.add(gameId);e.gameId=gameId;
+            if(e.funding.equals("CANCELLING")) return; // tick() cancels it.
+            e.readyHand=hand;e.handSeats=accounts;
+            e.paid.clear();e.paid.addAll(accounts.keySet());
+            if(room.blackjack==null) {e.funding="FUNDED";beginMatch(room);}
+            else publish(room);
+            return;
         }
-        int before=e.paid.size();
-        for(Seat s:room.seats) if(Boolean.TRUE.equals(game.get().deposited().get(s.accountId))) e.paid.add(s.id);
-        if(room.seats.stream().allMatch(s->e.paid.contains(s.id))) {
-            e.funding="FUNDED";
-            log.info("paid_room_funded room={} game={}",room.code,gameId);
-            beginMatch(room);
-        } else if(e.paid.size()!=before) publish(room);
+        String reason=chainError(result,error);
+        Seat broke=brokeSeat(room,reason);
+        if(broke!=null) {
+            e.broke.add(broke.id);
+            e.message=broke.name+" ran out of casino TRASH and sits out. Deposit more to play the next shoe.";
+            if(room.blackjack!=null) room.blackjack.leave(broke.id);
+            e.requestHand=true; // Retry without them.
+        } else {
+            e.message="Could not open the next hand on NEAR Testnet: "+reason;
+            e.stop=true;
+        }
+        if(room.blackjack==null&&e.stop) {e.funding="FAILED";room.seats.forEach(s->s.ready=s.npc);}
+        publish(room);
+    }
+    /** Blackjack: whether the next hand may be dealt; requests its on-chain game when needed. */
+    private boolean blackjackReady(Room room) {
+        var e=room.economy;
+        if(e==null) return true;
+        int next=room.blackjack.publicState().handNumber()+1;
+        if(e.readyHand>=next) return true;
+        if(e.stop) { // Nobody can pay: end the shoe.
+            for(Seat s:room.seats) try {room.blackjack.leave(s.id);} catch(IllegalArgumentException alreadyGone) {}
+            return true;
+        }
+        if(e.requestHand&&!e.inFlight) openHand(room,next);
+        return false;
+    }
+    /** Blackjack: pay the finished hand (win 2x, blackjack 2.5x, push 1x) and open the next one. */
+    private void afterPaidHand(Room room,BlackjackGame.PublicState state) {
+        var e=room.economy;
+        if(e==null||!e.blackjack||state.handNumber()==0||!state.handOver()||e.settledHand>=state.handNumber()) return;
+        e.settledHand=state.handNumber();
+        String gameId=e.gameId, roomId=room.id;
+        if(e.open.remove(gameId)) {
+            Map<String,BlackjackGame.Hand> hands=new HashMap<>();
+            state.players().forEach(h->hands.put(h.playerId(),h));
+            List<RoomPayout> view=new ArrayList<>();List<ChainGateway.Payout> payouts=new ArrayList<>();
+            e.handSeats.forEach((playerId,account)->{
+                var hand=hands.get(playerId);
+                var outcome=hand==null||hand.outcome()==null?BlackjackGame.Outcome.PUSH:hand.outcome(); // Not dealt: bet back.
+                BigInteger amount=switch(outcome) {
+                    case WIN -> e.stake.multiply(BigInteger.TWO);
+                    case BLACKJACK -> e.stake.multiply(BigInteger.valueOf(5)).divide(BigInteger.TWO);
+                    case PUSH -> e.stake;
+                    case LOSE -> BigInteger.ZERO;
+                };
+                view.add(new RoomPayout(playerId,account,amount.toString()));
+                if(amount.signum()>0) payouts.add(new ChainGateway.Payout(account,amount));
+            });
+            e.payouts=view;e.settlement="PENDING";e.txHash=null;
+            log.info("paid_hand_settle room={} game={} hand={} payouts={}",room.code,gameId,state.handNumber(),view);
+            chain.settleGame(gameId,payouts).whenComplete((result,error)->onHandSettled(roomId,gameId,result,error));
+        }
+        if(!state.shoeOver()&&!e.inFlight) openHand(room,state.handNumber()+1);
+        else if(!state.shoeOver()) e.requestHand=true;
+    }
+    synchronized void onHandSettled(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
+        Room room=rooms.get(roomId);
+        if(room==null||room.economy==null) return;
+        var e=room.economy;
+        if(error==null&&result!=null&&result.ok()) {e.settlement="CONFIRMED";e.txHash=result.txHash();}
+        else {
+            e.settlement="FAILED";e.txHash=result!=null?result.txHash():null;
+            e.message="A hand could not be paid out. After the on-chain deadline any player can call claim_refund.";
+        }
+        publish(room);
     }
     synchronized void onGameCancelled(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
-        Economy e=currentEconomy(roomId,gameId);
-        if(e==null) return;
-        e.inFlight=false;
         Room room=rooms.get(roomId);
+        if(room==null||room.economy==null||!gameId.equals(room.economy.gameId)) return;
+        var e=room.economy;
+        e.inFlight=false;
         if(error==null&&result!=null&&result.ok()) {
+            e.open.remove(gameId);
             e.funding="CANCELLED";
         } else {
             e.funding="FAILED";
@@ -394,7 +508,7 @@ public class RoomService {
         room.seats.forEach(s->s.ready=s.npc);
         publish(room);
     }
-    /** Starts cancelling an unfunded paid game. tick() sends the transaction. */
+    /** Starts cancelling a paid game that has not started. tick() sends the transaction. */
     private void cancelFunding(Room room,String reason) {
         var e=room.economy;
         if(e==null||!e.active()||e.funding.equals("CANCELLING")) return;
@@ -402,7 +516,7 @@ public class RoomService {
     }
     private void settleIfPaid(Room room) {
         var e=room.economy;
-        if(e==null||!e.funding.equals("FUNDED")||!e.settlement.equals("NOT_STARTED")) return;
+        if(e==null||e.blackjack||!e.funding.equals("FUNDED")||!e.settlement.equals("NOT_STARTED")) return;
         // The pot goes to the player with the most chips. A tie splits it equally among the leaders;
         // the indivisible remainder (a few yoctoTRASH at most) stays with the house.
         var chips=room.state().chips();
@@ -411,6 +525,7 @@ public class RoomService {
         BigInteger share=e.pot.divide(BigInteger.valueOf(leaders.size()));
         e.payouts=leaders.stream().map(s->new RoomPayout(s.id,s.accountId,share.toString())).toList();
         e.settlement="PENDING";
+        e.open.remove(e.gameId);
         String roomId=room.id, gameId=e.gameId;
         log.info("paid_room_settle room={} game={} leaders={} share={} pot={}",room.code,gameId,
             leaders.stream().map(s->s.accountId).toList(),share,e.pot);
@@ -418,9 +533,9 @@ public class RoomService {
             .whenComplete((result,error)->onSettled(roomId,gameId,result,error));
     }
     synchronized void onSettled(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
-        Economy e=currentEconomy(roomId,gameId);
-        if(e==null) return;
         Room room=rooms.get(roomId);
+        if(room==null||room.economy==null||!gameId.equals(room.economy.gameId)) return;
+        var e=room.economy;
         if(error==null&&result!=null&&result.ok()) {
             e.settlement="CONFIRMED";e.txHash=result.txHash();e.message=null;
         } else {
@@ -431,16 +546,18 @@ public class RoomService {
         publish(room);
         for(Seat s:room.seats) if(s.socket!=null&&room.game!=null&&room.state().finished()) result(room,s.socket);
     }
-    /** A paid room disappears: refund an open or unsettled on-chain game. */
+    /** A paid room disappears: refund every on-chain game that is open and not being settled. */
     private void releaseChainGame(Room room) {
         var e=room.economy;
-        if(e==null||e.gameId==null) return;
-        // CREATING is handled by onGameCreated once the transaction finishes.
-        boolean unsettled=e.funding.equals("AWAITING_PAYMENTS") || e.funding.equals("CANCELLING")&&!e.cancelSent
-            || e.funding.equals("FUNDED")&&e.settlement.equals("NOT_STARTED");
-        if(!unsettled) return;
-        log.info("paid_room_released room={} game={}",room.code,e.gameId);
-        chain.cancelGame(e.gameId);
+        if(e==null) return;
+        for(String gameId:List.copyOf(e.open)) {
+            log.info("paid_room_released room={} game={}",room.code,gameId);
+            chain.cancelGame(gameId);
+        }
+        e.open.clear();
+    }
+    private static String trash(BigInteger yocto) {
+        return new java.math.BigDecimal(yocto).movePointLeft(24).stripTrailingZeros().toPlainString();
     }
     private void beginMatch(Room room) {
         room.matchId=UUID.randomUUID().toString();
@@ -450,6 +567,7 @@ public class RoomService {
             // The house deals without a seat; humans and agents each hold a hand.
             room.dealt=new LinkedHashMap<>();room.seats.forEach(s->room.dealt.put(s.id,s));
             room.blackjack=new BlackjackGame(room.seats.stream().map(s->s.id).toList());
+            if(room.economy!=null) room.economy.broke.forEach(room.blackjack::leave); // Could not pay hand 1.
             afterBlackjackMove(room);
         } else {
             room.game=new LiarsDiceGame(room.seats.stream().map(s->s.id).toList());
@@ -480,6 +598,7 @@ public class RoomService {
     }
     private void afterBlackjackMove(Room room) {
         var state=room.blackjack.publicState();
+        afterPaidHand(room,state);
         if(state.shoeOver()) {room.deadline=0;room.resumeAt=0;room.seats.forEach(s->s.ready=s.npc);}
         else if(state.handOver()) {room.deadline=0;room.resumeAt=System.currentTimeMillis()+revealMillis;} // Show the result first.
         else scheduleTurn(room);
@@ -541,7 +660,7 @@ public class RoomService {
         peer.roomId=null;peer.playerId=null;
         if(!inProgress) room.seats.remove(seat);
         if(seat.id.equals(room.hostId)) room.hostId=room.seats.stream().filter(s->!s.npc&&!s.abandoned).map(s->s.id).findFirst().orElse(seat.id);
-        if(room.seats.stream().noneMatch(s->!s.npc&&!s.abandoned)) rooms.remove(room.id);else publish(room);
+        if(room.seats.stream().noneMatch(s->!s.npc&&!s.abandoned)) {releaseChainGame(room);rooms.remove(room.id);} else publish(room);
     }
     private void abandon(Room room,Seat seat) {
         if(seat.abandoned) return;
@@ -576,7 +695,7 @@ public class RoomService {
         RoomEconomy economy=null;
         if(room.economy!=null) {
             var e=room.economy;
-            economy=new RoomEconomy("PAID",chain.buyIn().toString(),chain.casinoId(),e.gameId,e.funding,e.deadline,
+            economy=new RoomEconomy("PAID",e.stake.toString(),chain.casinoId(),e.gameId,e.funding,0,
                 List.copyOf(e.paid),e.settlement,e.txHash,e.payouts,e.message);
         }
         send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.gameType,room.phase(),room.hostId,recipient.id,seats,
@@ -638,7 +757,7 @@ public class RoomService {
             if(!room.phase().equals("IN_PROGRESS")) continue;
             if(room.blackjack!=null) {
                 if(room.blackjack.publicState().handOver()) {
-                    if(now>=room.resumeAt) {room.blackjack.nextHand();room.revision++;afterBlackjackMove(room);publish(room);}
+                    if(now>=room.resumeAt&&blackjackReady(room)) {room.blackjack.nextHand();room.revision++;afterBlackjackMove(room);publish(room);}
                     continue;
                 }
                 String actor=room.blackjack.publicState().currentPlayerId();Seat seat=seat(room,actor);
@@ -654,30 +773,18 @@ public class RoomService {
                 apply(room,actor,room.game.fallbackFor(actor),seat.abandoned?"UNAVAILABLE":"TIMEOUT");
         }
     }
-    /** Drives paid-room funding: one chain request at a time per room. */
+    /** Cancels a paid game that was aborted before it started. One chain request at a time per room. */
     private void fundingTick(Room room,long now) {
         var e=room.economy;
-        if(e.inFlight) return;
+        if(e.inFlight||!e.funding.equals("CANCELLING")||e.cancelSent) return;
         String roomId=room.id, gameId=e.gameId;
-        switch(e.funding) {
-            case "AWAITING_PAYMENTS" -> {
-                if(now>e.deadline) {
-                    cancelFunding(room,"Not every player paid the buy-in in time. Buy-ins go back to casino balances.");
-                    publish(room);
-                    return;
-                }
-                if(now<e.nextPoll) return;
-                e.inFlight=true;
-                chain.game(gameId).whenComplete((game,error)->onGameStatus(roomId,gameId,game,error));
-            }
-            case "CANCELLING" -> {
-                if(e.cancelSent) return;
-                e.cancelSent=true;e.inFlight=true;
-                log.info("paid_room_cancel room={} game={} reason={}",room.code,gameId,e.message);
-                chain.cancelGame(gameId).whenComplete((result,error)->onGameCancelled(roomId,gameId,result,error));
-            }
-            default -> {}
+        if(gameId==null||!e.open.contains(gameId)) { // Never created on-chain: nothing to refund.
+            e.funding="CANCELLED";room.seats.forEach(s->s.ready=s.npc);publish(room);
+            return;
         }
+        e.cancelSent=true;e.inFlight=true;
+        log.info("paid_room_cancel room={} game={} reason={}",room.code,gameId,e.message);
+        chain.cancelGame(gameId).whenComplete((result,error)->onGameCancelled(roomId,gameId,result,error));
     }
     /**
      * Asks the agent's brain for a Liar's Dice move without holding the room lock while it thinks. The reply is

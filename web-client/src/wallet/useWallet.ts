@@ -61,6 +61,17 @@ export function useWallet() {
 
   useEffect(() => { if (session && config?.enabled) void refresh(session); }, [session?.sessionToken, config?.enabled]);
 
+  // Keep the casino balance visible and current: games take stakes and pay out without wallet popups.
+  useEffect(() => {
+    if (!session || !config?.enabled) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        chainApi.balance(session.sessionToken).then(setBalances).catch((error) => { if ((error as { expired?: boolean }).expired) clear(); });
+      }
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [session?.sessionToken, config?.enabled, clear]);
+
   /** Connect a wallet, then prove ownership with a NEP-413 signature over a server nonce. */
   const connect = useCallback(async () => {
     setBusy('Connecting wallet…'); setMessage(null);
@@ -133,13 +144,7 @@ export function useWallet() {
     return report(result, 'Withdrawn to your wallet.');
   }, [config, call, report]);
 
-  const joinGame = useCallback(async (gameId: string) => {
-    if (!config?.casinoId) return false;
-    const result = await call('Paying the buy-in…', config.casinoId, 'join_game', { game_id: gameId }, '0', 30);
-    return report(result, 'Buy-in paid from your casino balance.');
-  }, [config, call, report]);
-
   return { config, enabled: !!config?.enabled, session, accountId: session?.accountId ?? null, balances, busy, message,
-    connect, disconnect, refresh: () => refresh(), faucet, deposit, withdraw, joinGame, dismiss: () => setMessage(null) };
+    connect, disconnect, refresh: () => refresh(), faucet, deposit, withdraw, dismiss: () => setMessage(null) };
 }
 export type Wallet = ReturnType<typeof useWallet>;

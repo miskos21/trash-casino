@@ -272,9 +272,6 @@ impl World {
         .await
     }
 
-    async fn join(&self, player: &AccountId, game_id: &str) -> Result<ExecutionSuccess> {
-        self.call(player, &self.casino, "join_game", json!({ "game_id": game_id }), 0).await
-    }
 
     async fn settle(&self, game_id: &str, payouts: &[(&AccountId, u128)]) -> Result<ExecutionSuccess> {
         let payouts: Vec<Value> = payouts
@@ -356,11 +353,9 @@ async fn deposit_play_against_npc_settle_and_withdraw() -> Result<()> {
     assert_eq!(w.ft_transfer_call(&w.alice, 5 * TRASH, json!({ "type": "deposit", "x": 1 })).await?, 0);
     assert_eq!(w.wallet(&w.alice).await?, 50 * TRASH);
 
-    // Don sits with house money; Alice pays from her casino balance.
+    // Don sits with house money; Alice's buy-in comes from her casino balance, no signature.
     w.create_game("g-don", &[&w.alice, &w.don], 600).await?;
     assert_eq!(w.house().await?, SUPPLY - 10 * TRASH);
-    assert_err_contains(w.settle("g-don", &[(&w.alice, 20 * TRASH)]).await, "Not every player has paid");
-    w.join(&w.alice, "g-don").await?;
     assert_eq!(w.casino_balance(&w.alice).await?, 40 * TRASH);
     w.assert_invariant().await?;
 
@@ -401,8 +396,6 @@ async fn human_game_cancel_and_deadline_refunds() -> Result<()> {
     w.fund_player(&w.bob, 30 * TRASH).await?;
 
     w.create_game("cancel-me", &[&w.alice, &w.bob], 600).await?;
-    w.join(&w.alice, "cancel-me").await?;
-    w.join(&w.bob, "cancel-me").await?;
     w.call(&w.settler, &w.casino, "cancel_game", json!({ "game_id": "cancel-me" }), 0).await?;
     assert_eq!(w.casino_balance(&w.alice).await?, 30 * TRASH);
     assert_eq!(w.casino_balance(&w.bob).await?, 30 * TRASH);
@@ -410,13 +403,11 @@ async fn human_game_cancel_and_deadline_refunds() -> Result<()> {
 
     // The settler disappears: after the deadline a player recovers everyone's funds.
     w.create_game("abandoned", &[&w.alice, &w.bob], 2).await?;
-    w.join(&w.alice, "abandoned").await?;
     assert_err_contains(
         w.call(&w.alice, &w.casino, "claim_refund", json!({ "game_id": "abandoned" }), 0).await,
         "Refunds open after the deadline",
     );
     w.sandbox.fast_forward(20).await?;
-    assert_err_contains(w.join(&w.bob, "abandoned").await, "Buy-in deadline has passed");
     w.call(&w.alice, &w.casino, "claim_refund", json!({ "game_id": "abandoned" }), 0).await?;
     assert_eq!(w.casino_balance(&w.alice).await?, 30 * TRASH);
     assert_eq!(w.game("abandoned").await?["state"], "EXPIRED");
@@ -580,5 +571,20 @@ async fn only_the_configured_token_is_accepted() -> Result<()> {
     let fake_balance: String = w.view(&fake, "ft_balance_of", json!({ "account_id": w.alice })).await?;
     assert_eq!(fake_balance.parse::<u128>()?, 50 * TRASH);
     assert_eq!(w.casino_balance(&w.alice).await?, 0);
+    w.assert_invariant().await
+}
+
+#[tokio::test]
+async fn create_game_fails_whole_when_a_player_lacks_balance() -> Result<()> {
+    let w = World::new().await?;
+    w.fund_player(&w.alice, 30 * TRASH).await?;
+    assert_err_contains(
+        w.create_game("broke", &[&w.alice, &w.bob], 600).await,
+        "bob.sandbox has insufficient casino balance",
+    );
+    // The failed transaction reverted everything: Alice keeps her balance, no game exists.
+    assert_eq!(w.casino_balance(&w.alice).await?, 30 * TRASH);
+    let game: Value = w.game("broke").await?;
+    assert!(game.is_null());
     w.assert_invariant().await
 }

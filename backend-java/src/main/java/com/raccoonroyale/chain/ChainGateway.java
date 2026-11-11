@@ -24,7 +24,8 @@ public interface ChainGateway {
     /** NEAR account of an NPC ("don", "foxy"), if configured. */
     Optional<String> agentAccount(String agent);
 
-    CompletableFuture<TxResult> createGame(String gameId, BigInteger buyIn, List<String> players, long timeoutSeconds);
+    /** {@code houseStake} may be null. Human buy-ins come from their casino balances. */
+    CompletableFuture<TxResult> createGame(String gameId, BigInteger buyIn, List<String> players, BigInteger houseStake, long timeoutSeconds);
     /** Empty when the game does not exist on-chain. */
     CompletableFuture<Optional<ChainGame>> game(String gameId);
     CompletableFuture<TxResult> settleGame(String gameId, List<Payout> payouts);
@@ -57,7 +58,7 @@ public interface ChainGateway {
             public BigInteger buyIn() { return ONE_TRASH.multiply(BigInteger.TEN); }
             public Optional<String> agentAccount(String agent) { return Optional.empty(); }
             private <T> CompletableFuture<T> fail() { return CompletableFuture.failedFuture(new ChainDisabledException()); }
-            public CompletableFuture<TxResult> createGame(String g, BigInteger b, List<String> p, long t) { return fail(); }
+            public CompletableFuture<TxResult> createGame(String g, BigInteger b, List<String> p, BigInteger h, long t) { return fail(); }
             public CompletableFuture<Optional<ChainGame>> game(String g) { return fail(); }
             public CompletableFuture<TxResult> settleGame(String g, List<Payout> p) { return fail(); }
             public CompletableFuture<TxResult> cancelGame(String g) { return fail(); }

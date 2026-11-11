@@ -18,38 +18,48 @@ export function RoomLobby({ connection: c, wallet, avatar, onStarted }: { connec
   const [game, setGame] = useState<GameType>('BLACKJACK');
   const [agents, setAgents] = useState(1);
   const [stake, setStake] = useState<'free' | 'paid'>('free');
+  const [bet, setBet] = useState('1');
   const room = c.room;
   const disabled = c.socket !== 'online' || c.pending;
-  const paid = stake === 'paid' && game === 'LIARS_DICE';
+  const paid = stake === 'paid';
   const sessionToken = wallet.session?.sessionToken;
   const buyIn = wallet.config ? formatTrash(wallet.config.buyIn) : '10';
+  const betTrash = Number.parseInt(bet, 10);
+  const betValid = /^\d{1,2}$/.test(bet) && betTrash >= 1 && betTrash <= 50;
+  const stakeLabel = game === 'BLACKJACK' ? `${betValid ? betTrash : '?'} TRASH per hand` : `${buyIn} TRASH`;
   if (!room) return <section className="room-lobby">
-    <h2>{paid ? `Play for ${buyIn} TRASH` : 'Play for free'} · up to 4 seats</h2>
+    <h2>{paid ? `Play for ${stakeLabel}` : 'Play for free'} · up to 4 seats</h2>
     <div className="game-picker" role="group" aria-label="Game">
       {gameOptions.map((option) => <button key={option.id} aria-pressed={game === option.id}
         className={game === option.id ? 'selected' : ''} onClick={() => setGame(option.id)}>{option.name}</button>)}
     </div>
-    {wallet.enabled && game === 'LIARS_DICE' && <div className="game-picker" role="group" aria-label="Stake">
+    {wallet.enabled && <div className="game-picker" role="group" aria-label="Stake">
       <button aria-pressed={stake === 'free'} className={stake === 'free' ? 'selected' : ''} onClick={() => setStake('free')}>Free</button>
-      <button aria-pressed={stake === 'paid'} className={stake === 'paid' ? 'selected' : ''} onClick={() => setStake('paid')}>{buyIn} TRASH buy-in</button>
+      <button aria-pressed={stake === 'paid'} className={stake === 'paid' ? 'selected' : ''} onClick={() => setStake('paid')}>
+        {game === 'BLACKJACK' ? 'Bet TRASH' : `${buyIn} TRASH buy-in`}</button>
     </div>}
+    {paid && game === 'BLACKJACK' && <label>Bet per hand (1–50 TRASH)<input aria-label="Bet per hand in TRASH" inputMode="numeric"
+      value={bet} maxLength={2} onChange={(e) => setBet(e.target.value.replace(/[^0-9]/g, ''))} /></label>}
     <div className="game-picker agent-picker" role="group" aria-label="Agents at the table">
       {agentOptions.map((option) => <button key={option.count} aria-pressed={agents === option.count} aria-label={option.count + (option.count === 1 ? ' agent' : ' agents')}
         className={agents === option.count ? 'selected' : ''} onClick={() => setAgents(option.count)}>
         <strong>{option.count}</strong><small>{option.name}</small></button>)}
     </div>
-    <p className="free-play-note">{paid
-      ? `Everyone pays ${buyIn} TRASH from their casino balance into an on-chain escrow. The winner takes the pot. Agents play with house money.`
-      : 'No buy-in. No token rewards.'} {game === 'BLACKJACK'
+    <p className="free-play-note">{!paid ? 'No buy-in. No token rewards.'
+      : game === 'BLACKJACK'
+        ? `Each hand takes ${stakeLabel} from your casino balance, no wallet popups. Win pays 2×, blackjack 2.5×, push returns the bet. Agents play for show.`
+        : `Everyone's ${buyIn} TRASH buy-in comes from their casino balance, no wallet popups. The chip leader takes the pot. Agents play with house money.`}
+      {' '}{game === 'BLACKJACK'
       ? 'The house deals. Beat the dealer without going over 21.' : 'Everyone keeps 5 dice; a lost challenge costs one chip. Most chips wins.'}
       {' '}Agents are rule-based NPC players and take seats from the four available.
       {game === 'LIARS_DICE' && agents === 0 ? ' Liar’s Dice needs a second player to start.' : ''}</p>
     {paid && !sessionToken && <p className="room-error">Connect your wallet below first.</p>}
     <GameRules game={game} />
     <label>Your name<input aria-label="Player name" maxLength={32} value={name} onChange={(e) => setName(e.target.value)} /></label>
-    <button className="resume-button" disabled={disabled || !name.trim() || (paid && !sessionToken)} onClick={() => c.send({
+    <button className="resume-button" disabled={disabled || !name.trim() || (paid && (!sessionToken || (game === 'BLACKJACK' && !betValid)))} onClick={() => c.send({
       protocolVersion: 1, type: 'ROOM_CREATE', requestId: null, payload: {
-        displayName: name.trim(), avatar, game, agents, ...(paid ? { paid: true } : {}), ...(sessionToken ? { sessionToken } : {}),
+        displayName: name.trim(), avatar, game, agents, ...(paid ? { paid: true } : {}),
+        ...(paid && game === 'BLACKJACK' ? { betTrash } : {}), ...(sessionToken ? { sessionToken } : {}),
       },
     })}>Create room</button>
     <form className="join-row" onSubmit={(event) => {
@@ -68,13 +78,13 @@ export function RoomLobby({ connection: c, wallet, avatar, onStarted }: { connec
   const needsPlayer = room.game === 'LIARS_DICE' && room.participants.filter((p) => p.presence !== 'LEFT').length < 2;
   return <section className="room-lobby">
     <div className="room-code-line"><span>ROOM CODE</span><output aria-label="Room code">{room.roomCode}</output><small>{room.economy
-      ? `${formatTrash(room.economy.buyIn)} TRASH buy-in` : 'Free play'} · {gameOptions.find((option) => option.id === room.game)!.name}</small></div>
+      ? `${formatTrash(room.economy.buyIn)} TRASH ${room.game === 'BLACKJACK' ? 'per hand' : 'buy-in'}` : 'Free play'} · {gameOptions.find((option) => option.id === room.game)!.name}</small></div>
     <ul className="lobby-seats">{room.participants.map((p) => <li key={p.playerId}>
       <span>{p.displayName}{p.playerId === room.youId ? ' (you)' : ''}{p.accountId && <small className="seat-account">{p.accountId}</small>}</span>
       {p.presence !== 'ONLINE' ? <SeatPresence seat={p} /> : <small>{p.npc ? 'Agent · rule-based' : p.ready ? 'Ready' : 'Not ready'}</small>}
     </li>)}</ul>
     {room.economy && !sessionToken && <p className="room-error">This is a paid room. Connect your wallet below.</p>}
-    {room.phase === 'FUNDING' ? <button className="resume-button" onClick={onStarted}>Pay the buy-in</button>
+    {room.phase === 'FUNDING' ? <p className="free-play-note">Taking stakes from casino balances…</p>
     : room.phase !== 'IN_PROGRESS' ? <div className="lobby-buttons">
       <button className="secondary-button" disabled={disabled} onClick={() => c.send({
         protocolVersion: 1, type: 'ROOM_READY', requestId: null, payload: { roomId: room.roomId, ready: !me.ready },

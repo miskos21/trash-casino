@@ -116,29 +116,23 @@ try {
   const sessionToken = login.body.sessionToken;
   console.log(`login: NEP-413 verified ${login.body.accountId}`);
 
-  // 4. Paid room against Don. The server opens the game on-chain.
+  // 4. Paid Liar's Dice against Don. The server opens the game on-chain; the buy-in
+  //    comes from the casino balance with no player signature.
   await peer.wait((m) => m.type === 'CONNECTED');
   peer.send('ROOM_CREATE', { displayName: 'Reviewer', avatar: 'CAT', game: 'LIARS_DICE', agents: 1, paid: true, sessionToken });
   const session = await peer.wait((m) => m.type === 'ROOM_SESSION');
   peer.send('ROOM_READY', { roomId: session.roomId, ready: true });
   await peer.wait((m) => m.type === 'ROOM_STATE' && m.payload.participants[0].ready);
   peer.send('ROOM_START', { roomId: session.roomId });
-  const funding = await peer.wait((m) => m.type === 'ROOM_STATE' && m.payload.economy?.funding === 'AWAITING_PAYMENTS');
-  const gameId = funding.economy.gameId;
-  const opened = await view(casinoId, 'get_game_status', { game_id: gameId });
-  assert.equal(opened.state, 'OPEN');
-  assert.deepEqual(opened.seats.map((s) => [s.is_agent, s.deposited]), [[false, false], [true, true]]);
-  assert.equal(opened.seats[0].account_id, player.accountId);
-  assert.equal(peer.latest('GAME_STATE'), undefined, 'No dice before the buy-in is paid');
-  console.log(`funding: game ${gameId} open on-chain, Don seated with house money`);
-
-  // 5. Pay the buy-in from the casino balance.
-  const join = await tx(casinoId, 'join_game', { game_id: gameId }, 0n, 30n);
-  console.log(`buy-in: paid (tx ${join.hash})`);
   await peer.wait((m) => m.type === 'GAME_STATE', 60000);
-  console.log('match: started after the chain showed every seat paid');
+  const gameId = peer.latest('ROOM_STATE').economy.gameId;
+  const opened = await view(casinoId, 'get_game_status', { game_id: gameId });
+  assert.deepEqual(opened.seats.map((s) => [s.is_agent, s.deposited]), [[false, true], [true, true]]);
+  assert.equal(opened.seats[0].account_id, player.accountId);
+  assert.equal(await casino(), casinoBefore + depositAmount - BigInt(chain.buyIn), 'buy-in taken from the casino balance');
+  console.log(`liars dice: game ${gameId} funded on-chain without a player signature; match started`);
 
-  // 6. Play: bid (1,1) on an empty round, otherwise call bluff.
+  // 5. Play: bid (1,1) on an empty round, otherwise call bluff.
   let sentRevision = -1;
   const end = Date.now() + 300000;
   while (Date.now() < end && !peer.latest('GAME_RESULT')) {
@@ -154,15 +148,42 @@ try {
   }
   const result = await peer.wait((m) => m.type === 'GAME_RESULT' && m.payload.settlement !== 'PENDING', 120000);
   assert.equal(result.settlement, 'CONFIRMED', 'Settlement was not confirmed');
-  const won = result.winnerId === session.playerId;
   const economy = peer.latest('ROOM_STATE').economy;
-  console.log(`settlement: ${won ? 'you won' : 'Don won'}, pot ${fmt(economy.payouts[0].amount)} (tx ${economy.settlementTxHash})`);
+  const mine = BigInt(economy.payouts.find((p) => p.playerId === session.playerId)?.amount ?? '0');
+  console.log(`settlement: you got ${fmt(mine)} of the pot (tx ${economy.settlementTxHash})`);
+  assert.equal((await view(casinoId, 'get_game_status', { game_id: gameId })).state, 'SETTLED');
+  assert.equal(await casino(), casinoBefore + depositAmount - BigInt(chain.buyIn) + mine, 'Casino balance after settlement');
 
-  // 7. The chain agrees with the server.
-  const settled = await view(casinoId, 'get_game_status', { game_id: gameId });
-  assert.equal(settled.state, 'SETTLED');
-  const expected = casinoBefore + depositAmount - BigInt(chain.buyIn) + (won ? BigInt(chain.buyIn) * 2n : 0n);
-  assert.equal(await casino(), expected, 'Casino balance after settlement');
+  // 6. Paid Blackjack, 1 TRASH per hand: every hand is its own on-chain game, no signatures.
+  peer.send('ROOM_LEAVE', { roomId: session.roomId });
+  await peer.wait((m) => m.type === 'ROOM_LEFT');
+  peer.send('ROOM_CREATE', { displayName: 'Reviewer', avatar: 'CAT', game: 'BLACKJACK', agents: 0, paid: true, betTrash: 1, sessionToken });
+  const bj = await peer.wait((m) => m.type === 'ROOM_SESSION' && m.payload.roomId !== session.roomId);
+  peer.send('ROOM_READY', { roomId: bj.roomId, ready: true });
+  await peer.wait((m) => m.type === 'ROOM_STATE' && m.payload.roomId === bj.roomId && m.payload.participants[0].ready);
+  peer.send('ROOM_START', { roomId: bj.roomId });
+  const confirmed = new Set();
+  let stood = '';
+  const bjEnd = Date.now() + 300000;
+  while (Date.now() < bjEnd && confirmed.size < 2) {
+    const room = peer.latest('ROOM_STATE');
+    if (room?.economy?.settlement === 'CONFIRMED' && room.economy.settlementTxHash) confirmed.add(room.economy.settlementTxHash);
+    if (room?.economy?.funding === 'FAILED') throw new Error('Blackjack funding failed: ' + room.economy.message);
+    const state = peer.latest('BLACKJACK_STATE');
+    const key = state && `${state.hand}:${state.revision}`;
+    if (state?.currentPlayerId === bj.playerId && key !== stood) {
+      stood = key;
+      peer.send('BLACKJACK_STAND', { matchId: state.matchId, expectedRevision: state.revision });
+    }
+    if (peer.failure) throw peer.failure;
+    await delay(50);
+  }
+  assert.ok(confirmed.size >= 2, 'two Blackjack hands were paid out on-chain');
+  console.log(`blackjack: ${confirmed.size} hands settled on-chain (${[...confirmed].join(', ')})`);
+  peer.send('ROOM_LEAVE', { roomId: bj.roomId });
+  await delay(3000); // Leaving refunds the open next hand.
+
+  // 7. The casino ledger matches its token balance.
   const totals = await view(casinoId, 'get_totals', {});
   assert.equal(BigInt(totals.total), BigInt(await view(tokenId, 'ft_balance_of', { account_id: casinoId })), 'Casino ledger matches its token balance');
 
@@ -174,10 +195,7 @@ try {
   assert.equal(await casino(), 0n);
   assert.equal(await wallet(), walletBefore + withdrawAmount);
   console.log(`withdraw: ${fmt(withdrawAmount)} back to the wallet (tx ${withdrawal.hash})`);
-
-  peer.send('ROOM_LEAVE', { roomId: session.roomId });
-  await delay(100);
-  console.log('PASS: faucet, deposit, NEP-413 login, on-chain funding, real match, confirmed settlement, and withdrawal.');
+  console.log('PASS: faucet, deposit, NEP-413 login, paid Liar\'s Dice and Blackjack without play signatures, confirmed settlements, withdrawal.');
 } finally {
   peer.close();
 }

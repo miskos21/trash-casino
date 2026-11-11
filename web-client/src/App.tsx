@@ -16,6 +16,7 @@ import { GameRules } from './components/GameRules';
 import { WalletPanel } from './components/WalletPanel';
 import { FundingPanel } from './components/FundingPanel';
 import { useWallet } from './wallet/useWallet';
+import { formatTrash } from './wallet/trash';
 
 class SceneBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -102,6 +103,10 @@ export function App() {
         </button>
         <button className="hud-button menu-trigger" aria-label="Open menu" aria-haspopup="dialog" aria-expanded={menuOpen}
           onClick={() => setMenuOpen(true)}><GameIcon name="menu" /><span>{status.room ? 'Room & players' : 'Play & character'}</span></button>
+        {wallet.session && <button className="balance-chip" onClick={() => setMenuOpen(true)} title="Casino balance · wallet balance"
+          aria-label={"Casino balance " + (wallet.balances ? formatTrash(wallet.balances.casino) : "unknown") + " TRASH. Open wallet"}>
+          <strong>{wallet.balances ? formatTrash(wallet.balances.casino) : "…"}</strong><span>TRASH in casino</span>
+          <small>wallet {wallet.balances ? formatTrash(wallet.balances.wallet) : "…"}</small></button>}
         {status.room && <LeaveRoomButton connection={status} />}
       </div>
     </header>

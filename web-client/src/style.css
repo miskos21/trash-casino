@@ -395,3 +395,9 @@ button:disabled { opacity: 0.45; }
 .funding-panel ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
 .funding-panel li { display: flex; justify-content: space-between; gap: 10px; }
 .funding-panel li small { color: #b6c99e; }
+.balance-chip { pointer-events: auto; display: grid; grid-template-columns: auto auto; column-gap: 6px; align-items: baseline; padding: 6px 12px;
+  border: 1px solid #dcc18e; border-radius: 8px; background: #182821e6; color: #eee7d4; font: inherit; font-size: 11px; cursor: pointer; text-align: left; }
+.balance-chip strong { color: #f5ddb1; font-size: 15px; font-weight: 600; }
+.balance-chip small { grid-column: 1 / -1; color: #9fab93; font-size: 10px; }
+.funding-panel.compact { gap: 4px; padding: 10px 14px; }
+@media (max-width: 640px) { .balance-chip span, .balance-chip small { display: none; } }

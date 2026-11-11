@@ -351,10 +351,14 @@ export interface ROOM_CREATE {
      */
     agents?: number;
     /**
-     * Paid Liar's Dice room: every human needs a wallet session and pays the fixed TRASH buy-in from their casino balance. Defaults to false.
+     * Paid room on NEAR Testnet: every human needs a wallet session; stakes come from casino balances without extra signatures. Liar's Dice uses the fixed buy-in; Blackjack uses betTrash per hand. Defaults to false.
      */
     paid?: boolean;
     sessionToken?: SessionToken;
+    /**
+     * Paid Blackjack only: TRASH bet per hand (whole TRASH). Defaults to 1.
+     */
+    betTrash?: number;
   };
 }
 export interface ROOM_JOIN {

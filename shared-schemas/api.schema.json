@@ -736,10 +736,16 @@
             },
             "paid": {
               "type": "boolean",
-              "description": "Paid Liar's Dice room: every human needs a wallet session and pays the fixed TRASH buy-in from their casino balance. Defaults to false."
+              "description": "Paid room on NEAR Testnet: every human needs a wallet session; stakes come from casino balances without extra signatures. Liar's Dice uses the fixed buy-in; Blackjack uses betTrash per hand. Defaults to false."
             },
             "sessionToken": {
               "$ref": "#/$defs/SessionToken"
+            },
+            "betTrash": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Paid Blackjack only: TRASH bet per hand (whole TRASH). Defaults to 1."
             }
           },
           "required": [

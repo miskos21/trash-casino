@@ -69,11 +69,6 @@ fn create_game(c: &mut Contract, id: &str, players: Vec<AccountId>, house_stake:
     c.create_game(id.into(), U128(10 * TRASH), players, house_stake.map(U128), 600);
 }
 
-fn join(c: &mut Contract, id: &str, who: AccountId) {
-    set_ctx(who, 0, T0 + 1);
-    c.join_game(id.into());
-}
-
 fn settle(c: &mut Contract, id: &str, payouts: Vec<(AccountId, u128)>) {
     set_ctx(settler(), 0, T0 + 2);
     c.settle_game(
@@ -209,8 +204,6 @@ fn cannot_withdraw_more_than_balance() {
 fn human_game_escrows_settles_once_and_pays_balances() {
     let mut c = setup();
     create_game(&mut c, "g1", vec![alice(), bob()], None);
-    join(&mut c, "g1", alice());
-    join(&mut c, "g1", bob());
     assert_eq!(balance(&c, alice()), 90 * TRASH);
     assert_eq!(c.get_totals().escrow.0, 20 * TRASH);
     assert_totals(&c, FUNDED);
@@ -228,7 +221,6 @@ fn agent_seats_use_house_money_and_winnings_return_to_house() {
     create_game(&mut c, "g1", vec![alice(), don()], None);
     assert_eq!(house(&c), 990 * TRASH, "Don's buy-in came from the house");
     assert_eq!(c.get_house().staked_today.0, 10 * TRASH);
-    join(&mut c, "g1", alice());
     settle(&mut c, "g1", vec![(don(), 20 * TRASH)]);
     assert_eq!(house(&c), 1_010 * TRASH);
     assert_eq!(balance(&c, don()), 0, "agents never hold a player balance");
@@ -240,7 +232,6 @@ fn agent_seats_use_house_money_and_winnings_return_to_house() {
 fn player_beats_agent_and_takes_house_money() {
     let mut c = setup();
     create_game(&mut c, "g1", vec![alice(), don()], None);
-    join(&mut c, "g1", alice());
     settle(&mut c, "g1", vec![(alice(), 20 * TRASH)]);
     assert_eq!(balance(&c, alice()), 110 * TRASH);
     assert_eq!(house(&c), 990 * TRASH);
@@ -251,7 +242,6 @@ fn player_beats_agent_and_takes_house_money() {
 fn single_player_game_against_house_stake() {
     let mut c = setup();
     create_game(&mut c, "bj", vec![alice()], Some(25 * TRASH));
-    join(&mut c, "bj", alice());
     // Alice ends 7 TRASH up; the remainder of the escrow returns to the house.
     settle(&mut c, "bj", vec![(alice(), 17 * TRASH)]);
     assert_eq!(balance(&c, alice()), 107 * TRASH);
@@ -264,40 +254,6 @@ fn single_player_game_against_house_stake() {
 fn single_player_without_house_stake_is_rejected() {
     let mut c = setup();
     create_game(&mut c, "g1", vec![alice()], None);
-}
-
-#[test]
-#[should_panic(expected = "Insufficient casino balance for the buy-in")]
-fn join_needs_casino_balance() {
-    let mut c = setup();
-    create_game(&mut c, "g1", vec![alice(), acc("carol.test")], None);
-    join(&mut c, "g1", acc("carol.test"));
-}
-
-#[test]
-#[should_panic(expected = "Buy-in already paid")]
-fn cannot_join_twice() {
-    let mut c = setup();
-    create_game(&mut c, "g1", vec![alice(), bob()], None);
-    join(&mut c, "g1", alice());
-    join(&mut c, "g1", alice());
-}
-
-#[test]
-#[should_panic(expected = "Caller has no seat in this game")]
-fn strangers_cannot_join() {
-    let mut c = setup();
-    create_game(&mut c, "g1", vec![alice(), bob()], None);
-    join(&mut c, "g1", acc("mallory.test"));
-}
-
-#[test]
-#[should_panic(expected = "Buy-in deadline has passed")]
-fn cannot_join_after_deadline() {
-    let mut c = setup();
-    create_game(&mut c, "g1", vec![alice(), bob()], None);
-    set_ctx(alice(), 0, T0 + 601 * SEC);
-    c.join_game("g1".into());
 }
 
 #[test]
@@ -320,8 +276,6 @@ fn only_settler_creates_games() {
 
 fn funded_game(c: &mut Contract) {
     create_game(c, "g1", vec![alice(), bob()], None);
-    join(c, "g1", alice());
-    join(c, "g1", bob());
 }
 
 #[test]
@@ -358,15 +312,6 @@ fn payout_recipients_unique() {
 }
 
 #[test]
-#[should_panic(expected = "Not every player has paid the buy-in")]
-fn cannot_settle_partially_funded_game() {
-    let mut c = setup();
-    create_game(&mut c, "g1", vec![alice(), bob()], None);
-    join(&mut c, "g1", alice());
-    settle(&mut c, "g1", vec![(alice(), 10 * TRASH)]);
-}
-
-#[test]
 #[should_panic(expected = "Only the settler can call this method")]
 fn players_cannot_settle() {
     let mut c = setup();
@@ -399,7 +344,6 @@ fn claim_refund_waits_for_deadline() {
 fn claim_refund_after_deadline_returns_everything() {
     let mut c = setup();
     create_game(&mut c, "g1", vec![alice(), don()], Some(5 * TRASH));
-    join(&mut c, "g1", alice());
     set_ctx(alice(), 0, T0 + 601 * SEC);
     c.claim_refund("g1".into());
     let g = c.get_game_status("g1".into()).unwrap();
@@ -414,7 +358,6 @@ fn claim_refund_after_deadline_returns_everything() {
 fn cancel_refunds_humans_and_house() {
     let mut c = setup();
     create_game(&mut c, "g1", vec![alice(), don()], None);
-    join(&mut c, "g1", alice());
     set_ctx(settler(), 0, T0 + 2);
     c.cancel_game("g1".into());
     assert_eq!(state(&c, "g1"), GameState::Cancelled);
@@ -424,7 +367,7 @@ fn cancel_refunds_humans_and_house() {
 }
 
 #[test]
-fn cancel_before_anyone_paid_refunds_only_house() {
+fn cancel_refunds_every_buy_in() {
     let mut c = setup();
     create_game(&mut c, "g1", vec![alice(), bob()], None);
     set_ctx(settler(), 0, T0 + 2);
@@ -587,4 +530,24 @@ fn pay_offer_only_to_agents() {
     let mut c = setup();
     set_ctx(alice(), 0, T0);
     c.pay_offer("offer-1".into(), bob(), U128(3 * TRASH));
+}
+
+#[test]
+#[should_panic(expected = "carol.test has insufficient casino balance")]
+fn create_game_needs_every_human_balance() {
+    let mut c = setup();
+    create_game(&mut c, "g1", vec![alice(), acc("carol.test")], None);
+}
+
+#[test]
+fn create_game_takes_buy_ins_without_player_signatures() {
+    let mut c = setup();
+    create_game(&mut c, "g1", vec![alice(), bob(), don()], Some(5 * TRASH));
+    assert_eq!(balance(&c, alice()), 90 * TRASH);
+    assert_eq!(balance(&c, bob()), 90 * TRASH);
+    let g = c.get_game_status("g1".into()).unwrap();
+    assert!(g.seats.iter().all(|s| s.deposited));
+    assert_eq!(g.total_deposited.0, 35 * TRASH);
+    assert_eq!(house(&c), 985 * TRASH);
+    assert_totals(&c, FUNDED);
 }

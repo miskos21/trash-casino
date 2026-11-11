@@ -107,9 +107,12 @@ public class BridgeChainGateway implements ChainGateway {
     }
 
     @Override
-    public CompletableFuture<TxResult> createGame(String gameId, BigInteger buyIn, List<String> players, long timeoutSeconds) {
-        return tx("create_game:" + gameId, "/games", Map.of("gameId", gameId, "buyIn", buyIn.toString(),
+    public CompletableFuture<TxResult> createGame(String gameId, BigInteger buyIn, List<String> players, BigInteger houseStake,
+        long timeoutSeconds) {
+        var body = new LinkedHashMap<String, Object>(Map.of("gameId", gameId, "buyIn", buyIn.toString(),
             "players", players, "timeoutSeconds", timeoutSeconds));
+        if (houseStake != null && houseStake.signum() > 0) body.put("houseStake", houseStake.toString());
+        return tx("create_game:" + gameId, "/games", body);
     }
 
     @Override
