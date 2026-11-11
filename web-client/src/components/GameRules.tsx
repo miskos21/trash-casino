@@ -22,11 +22,11 @@ export function GameRules({ game = 'LIARS_DICE' }: { game?: GameType }) {
           <li>Hands keep coming from one <strong>six-deck shoe</strong>. When about three quarters of it is dealt, the cut card
             ends the session after that hand and the standings show everyone’s wins, losses, and pushes.</li>
         </ol> : <ol>
-          <li>Everyone starts with <strong>5 dice</strong>. You see your own dice; other players’ dice stay hidden.</li>
+          <li>Everyone always rolls <strong>5 dice</strong> and starts with <strong>5 chips</strong>. You see your own dice; other players’ dice stay hidden.</li>
           <li>A claim like <strong>“4 × ⚄”</strong> means: “Across everyone’s dice, at least four dice show five.” It is not a token bet.</li>
           <li>On your turn, raise the quantity, or keep the quantity and raise the face. <strong>Ones are not wild.</strong></li>
-          <li><strong>Call bluff</strong> to reveal all dice. If the claim is met, the caller loses one die. Otherwise, the player who made the claim loses one.</li>
-          <li>The round loser starts again, or the next active player if the loser is eliminated. With no dice you are out. <strong>The last player with dice wins.</strong></li>
+          <li><strong>Call bluff</strong> to reveal all dice. If the claim is met, the caller pays <strong>one chip</strong> to the player who made it. Otherwise the claimer pays one chip to the caller. Nobody loses dice.</li>
+          <li>The round loser starts the next round. With no chips you are out. The match ends when one player holds every chip, or when the host clicks <strong>End match</strong>. <strong>Most chips wins.</strong> Leaving keeps your chips.</li>
         </ol>}
         <p>{blackjack ? 'If the turn timer runs out, you stand automatically. Agents hit below 17 and stand otherwise. The server shuffles each shoe; this is not provably fair randomness.'
           : 'The turn timer uses a legal fallback if you run out of time. Agents (Don, Foxy) currently play rule-based moves.'}</p>

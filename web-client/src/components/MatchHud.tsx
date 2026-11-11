@@ -31,7 +31,9 @@ export function MatchHud({ connection: c, onMenu }: { connection: GameConnection
   const shownDice = visibleDiceForSeat(c.game, c.reveal, c.room.youId, c.room.youId, now) ?? [];
   const round = revealing ? c.reveal!.round : paused ? Math.max(1, state.round - 1) : state.round;
   const seconds = Math.max(0, Math.ceil(((paused ? state.resumeAtEpochMillis : state.deadlineEpochMillis) - now) / 1000));
-  const title = finished ? name(state.winnerId) + ' wins!' : paused ? 'Round ' + round + ' revealed'
+  const leader = state.participants.find((p) => p.playerId === state.winnerId);
+  const isHost = c.room.hostId === c.room.youId;
+  const title = finished ? leader ? leader.displayName + ' wins with ' + leader.chips + ' chips' : 'Tie on chips' : paused ? 'Round ' + round + ' revealed'
     : yourTurn ? 'Your turn' : name(state.currentPlayerId) + '’s turn';
   const send = (type: 'PLAYER_BID' | 'CALL_BLUFF') => {
     if (type === 'PLAYER_BID') c.send({ protocolVersion: 1, type, requestId: null,
@@ -43,7 +45,8 @@ export function MatchHud({ connection: c, onMenu }: { connection: GameConnection
     <section className={'match-heading ' + (yourTurn ? 'is-your-turn' : '')} aria-live="polite">
       <small>LIAR’S DICE · ROUND {round}</small>
       <h2>{title}</h2>
-      {paused && c.reveal?.matchId === state.matchId && <p>{name(c.reveal.loserId)} loses one die</p>}
+      {paused && c.reveal?.matchId === state.matchId && <p>{name(c.reveal.loserId)} pays 1 chip to {name(c.reveal.winnerId)}</p>}
+      {finished && <p>Final chips: {[...state.participants].sort((a, b) => b.chips - a.chips).map((p) => p.displayName + ' ' + p.chips).join(' · ')}</p>}
     </section>
     <aside className="match-seats" aria-label="Match participants">
       {state.participants.map((p) => {
@@ -53,7 +56,8 @@ export function MatchHud({ connection: c, onMenu }: { connection: GameConnection
         return <div key={p.playerId} data-presence={seat?.presence} className={'player-card ' + (playing ? 'active-seat' : '')}>
           <img src={avatars.find((a) => a.id === p.avatar)?.portrait} alt="" />
           <div><strong>{p.displayName}{p.playerId === c.room!.youId ? ' (you)' : ''}</strong>
-            <small>{!p.diceCount ? 'Eliminated' : p.diceCount + ' dice remaining'}{p.npc ? ' · NPC' : ''}</small>
+            <small className="seat-chips"><span className="chip-icon" aria-hidden="true" />{p.chips} {p.chips === 1 ? 'chip' : 'chips'}
+              {!p.chips ? ' · out' : !p.diceCount ? ' · left' : ''}{p.npc ? ' · agent' : ''}</small>
             <SeatPresence seat={seat} />
             {last?.bid && <span className="player-last-claim">Claimed {last.bid.quantity} × <DieFace value={last.bid.face} small /></span>}
           </div>
@@ -75,7 +79,7 @@ export function MatchHud({ connection: c, onMenu }: { connection: GameConnection
       </div>
       <div className="private-dice"><small>{revealing ? 'Revealed dice' : 'Your dice'}</small>
         <div aria-label="Your private dice">{shownDice.map((value, i) => <DieFace key={i} value={value} />)}
-          {!shownDice.length && <span className="eliminated-label">Eliminated · watching the match</span>}</div>
+          {!shownDice.length && <span className="eliminated-label">Out of chips · watching the match</span>}</div>
       </div>
       {finished ? <button className="resume-button" onClick={onMenu}>Back to lobby</button> : <>
         <div className="bid-controls">
@@ -87,6 +91,10 @@ export function MatchHud({ connection: c, onMenu }: { connection: GameConnection
           <button className="resume-button" disabled={!enabled || !bidValid} onClick={() => send('PLAYER_BID')}>Make claim</button>
           <button className="secondary-button" disabled={!enabled || !state.lastBid} onClick={() => send('CALL_BLUFF')}>Call bluff</button>
         </div>
+        {isHost && <button className="end-match-button" disabled={c.socket !== 'online' || c.pending} onClick={() => {
+          if (window.confirm('End the match now? Current chips become the final standings.')) c.send({ protocolVersion: 1,
+            type: 'MATCH_END', requestId: null, payload: { roomId: c.room!.roomId, matchId: state.matchId } });
+        }}>End match · chips become final</button>}
       </>}
       {c.error && <p className="room-error" role="alert">{c.error}</p>}
     </section>

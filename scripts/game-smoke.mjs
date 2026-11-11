@@ -92,9 +92,20 @@ try {
   const humans = [recovered, guest];
   let sentRevision = -1;
   const end = Date.now() + 180000;
+  // Chip rules: nobody loses dice; a lost challenge moves one chip. Play a few challenges, then the host ends it.
+  const results = () => recovered.latest('GAME_STATE').publicState.history.filter((e) => e.type === 'ROUND_RESULT').length;
   while (Date.now() < end) {
     const current = recovered.latest('GAME_STATE').publicState;
     if (current.phase === 'FINISHED') break;
+    if (results() >= 3 && Date.now() >= current.resumeAtEpochMillis) {
+      for (const seat of current.participants) if (seat.chips > 0) assert.equal(seat.diceCount, 5, 'Dice are never lost');
+      assert.equal(current.participants.reduce((sum, seat) => sum + seat.chips, 0), 15, 'Chips are conserved');
+      const refused = await guest.command('MATCH_END', { roomId, matchId: current.matchId }, 'ERROR');
+      assert.equal(refused.code, 'NOT_HOST');
+      recovered.send('MATCH_END', { roomId, matchId: current.matchId });
+      await recovered.wait((m) => m.type === 'GAME_RESULT');
+      break;
+    }
     if (current.revision !== sentRevision && Date.now() >= current.resumeAtEpochMillis + 30) {
       const actor = humans.find((p) => p.latest('ROOM_SESSION').playerId === current.currentPlayerId);
       if (actor) {
@@ -109,12 +120,15 @@ try {
   }
   const finished = recovered.latest('GAME_STATE').publicState;
   assert.equal(finished.phase, 'FINISHED', 'Match did not finish');
-  assert.ok(finished.winnerId);
   const result = await recovered.wait((m) => m.type === 'GAME_RESULT');
   assert.equal(result.settlement, 'NOT_STARTED');
+  assert.equal(result.standings.reduce((sum, seat) => sum + seat.chips, 0), 15, 'Final chips equal the buy-ins');
+  const best = Math.max(...result.standings.map((seat) => seat.chips));
+  const leaders = result.standings.filter((seat) => seat.chips === best);
+  assert.equal(result.winnerId, leaders.length === 1 ? leaders[0].playerId : null);
   await guest.wait((m) => m.type === 'GAME_RESULT');
   assert.equal(guest.latest('GAME_STATE').publicState.winnerId, finished.winnerId);
-  console.log('PASS: two humans + NPC finished a real server match; schema validation, own-dice isolation, illegal actions and reconnect checked. No payments.');
+  console.log('PASS: two humans + agent played a real chip match ended by the host; chips conserved, dice kept, own-dice isolation, illegal actions and reconnect checked. No payments.');
   // Explicit leave prevents this reviewer script from leaving a room behind.
   recovered.send('ROOM_LEAVE', { roomId });
   guest.send('ROOM_LEAVE', { roomId });

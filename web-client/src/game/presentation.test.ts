@@ -7,13 +7,13 @@ const game: PlayerGameState = {
     currentPlayerId: 'me', lastBid: null, lastBidderId: null, winnerId: null,
     deadlineEpochMillis: 35000, resumeAtEpochMillis: 5000,
     participants: [
-      { playerId: 'me', displayName: 'Me', avatar: 'CAT', npc: false, diceCount: 4 },
-      { playerId: 'other', displayName: 'Other', avatar: 'FROG', npc: true, diceCount: 5 },
+      { playerId: 'me', displayName: 'Me', avatar: 'CAT', npc: false, diceCount: 5, chips: 4 },
+      { playerId: 'other', displayName: 'Other', avatar: 'FROG', npc: true, diceCount: 5, chips: 6 },
     ] }, ownDice: [6, 6, 6, 6],
 };
 const reveal: DICE_REVEAL['payload'] = {
   matchId: 'match', round: 1, bid: { quantity: 3, face: 2 }, bidderId: 'me', callerId: 'other',
-  loserId: 'me', actualCount: 1,
+  loserId: 'me', winnerId: 'other', actualCount: 1,
   dice: [{ playerId: 'me', dice: [1, 2, 3, 4, 5] }, { playerId: 'other', dice: [1, 1, 1, 1, 1] }],
 };
 describe('round presentation and privacy', () => {

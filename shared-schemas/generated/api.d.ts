@@ -65,7 +65,9 @@ export type ApiContract =
   | BLACKJACK_STATE
   | BlackjackTally
   | BlackjackShoe
-  | ROOM_LEFT;
+  | ROOM_LEFT
+  | CHAT_MESSAGE
+  | MATCH_END;
 export type Identifier = string;
 /**
  * Exact base-unit integer string. Services must also enforce u128 and budget limits.
@@ -96,7 +98,8 @@ export type ClientMessage =
   | ROOM_LEAVE
   | ROOM_START
   | BLACKJACK_HIT
-  | BLACKJACK_STAND;
+  | BLACKJACK_STAND
+  | MATCH_END;
 export type ServerMessage =
   | PONG
   | CONNECTED
@@ -112,7 +115,8 @@ export type ServerMessage =
   | ROOM_STATE
   | ROOM_SESSION
   | BLACKJACK_STATE
-  | ROOM_LEFT;
+  | ROOM_LEFT
+  | CHAT_MESSAGE;
 export type GameType = "LIARS_DICE" | "BLACKJACK";
 
 export interface Bid {
@@ -125,6 +129,10 @@ export interface Participant {
   avatar: Avatar;
   npc: boolean;
   diceCount: number;
+  /**
+   * Chips held. Every player starts with 5; a lost challenge pays one chip to the other player in it.
+   */
+  chips: number;
 }
 export interface PublicGameState {
   matchId: Identifier;
@@ -141,6 +149,9 @@ export interface PublicGameState {
   currentPlayerId: Identifier | null;
   lastBid: Bid | null;
   lastBidderId: Identifier | null;
+  /**
+   * The single player with the most chips when the match ends, or null on a tie or while playing.
+   */
   winnerId: Identifier | null;
   revision: number;
   deadlineEpochMillis: number;
@@ -160,7 +171,11 @@ export interface PublicGameEvent {
   bid: Bid | null;
   loserId: Identifier | null;
   actualCount: number | null;
-  cause: "PLAYER" | "NPC" | "TIMEOUT" | "UNAVAILABLE" | null;
+  cause: "PLAYER" | "NPC" | "NPC_FALLBACK" | "TIMEOUT" | "UNAVAILABLE" | null;
+  /**
+   * ROUND_RESULT: the player who received the loser's chip.
+   */
+  winnerId: Identifier | null;
 }
 export interface PlayerGameState {
   publicState: PublicGameState;
@@ -392,6 +407,7 @@ export interface DICE_REVEAL {
     callerId: Identifier;
     bid: Bid;
     actualCount: number;
+    winnerId: Identifier;
   };
 }
 export interface NPC_CHAT {
@@ -427,8 +443,60 @@ export interface GAME_RESULT {
   requestId: Identifier | null;
   payload: {
     matchId: Identifier;
-    winnerId: Identifier;
+    /**
+     * The single player with the most chips, or null on a tie.
+     */
+    winnerId: Identifier | null;
     settlement: "NOT_STARTED" | "PENDING" | "CONFIRMED" | "FAILED";
+    /**
+     * Final chips per seat. A future escrow pays chips × chip value, which always sums to the buy-ins.
+     *
+     * @minItems 2
+     * @maxItems 4
+     */
+    standings:
+      | [
+          {
+            playerId: Identifier;
+            chips: number;
+          },
+          {
+            playerId: Identifier;
+            chips: number;
+          }
+        ]
+      | [
+          {
+            playerId: Identifier;
+            chips: number;
+          },
+          {
+            playerId: Identifier;
+            chips: number;
+          },
+          {
+            playerId: Identifier;
+            chips: number;
+          }
+        ]
+      | [
+          {
+            playerId: Identifier;
+            chips: number;
+          },
+          {
+            playerId: Identifier;
+            chips: number;
+          },
+          {
+            playerId: Identifier;
+            chips: number;
+          },
+          {
+            playerId: Identifier;
+            chips: number;
+          }
+        ];
   };
 }
 export interface PLAYER_DISCONNECT {
@@ -489,6 +557,18 @@ export interface BLACKJACK_STAND {
     expectedRevision: number;
   };
 }
+export interface MATCH_END {
+  protocolVersion: 1;
+  type: "MATCH_END";
+  requestId: Identifier | null;
+  /**
+   * Host only: end a running Liar's Dice match; chips become final standings.
+   */
+  payload: {
+    roomId: Identifier;
+    matchId: Identifier;
+  };
+}
 export interface ROOM_STATE {
   protocolVersion: 1;
   type: "ROOM_STATE";
@@ -508,6 +588,10 @@ export interface RoomState {
   participants:
     [RoomSeat] | [RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat, RoomSeat];
   game: GameType;
+  /**
+   * How agents decide: a live LLM, or the labelled offline mock used without an API key.
+   */
+  agentMode: "LLM" | "TEMPORARY_MOCK";
 }
 export interface RoomSeat {
   playerId: Identifier;
@@ -661,5 +745,22 @@ export interface ROOM_LEFT {
   requestId: Identifier | null;
   payload: {
     roomId: Identifier;
+  };
+}
+export interface CHAT_MESSAGE {
+  protocolVersion: 1;
+  type: "CHAT_MESSAGE";
+  requestId: Identifier | null;
+  /**
+   * Public table chat. Player text is untrusted: agents read it as data and it never changes their permissions.
+   */
+  payload: {
+    matchId: Identifier;
+    messageId: Identifier;
+    senderId: Identifier;
+    senderName: string;
+    agent: boolean;
+    text: string;
+    sentAtEpochMillis: number;
   };
 }

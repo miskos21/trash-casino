@@ -5,6 +5,7 @@ import { useGameConnection } from './services/useGameConnection';
 import { RoomLobby } from './components/RoomLobby';
 import { MatchHud } from './components/MatchHud';
 import { BlackjackHud } from './components/BlackjackHud';
+import { ChatPanel } from './components/ChatPanel';
 import { avatars, type AvatarOption } from './avatars';
 import { GameIcon } from './components/GameIcon';
 import { MatchClockProvider } from './game/MatchClock';
@@ -104,6 +105,8 @@ export function App() {
 
     {status.room?.game === 'BLACKJACK' ? <BlackjackHud connection={status} onMenu={() => setMenuOpen(true)} />
       : <MatchHud connection={status} onMenu={() => setMenuOpen(true)} />}
+    {(status.game?.publicState.matchId ?? status.blackjack?.matchId) && <ChatPanel connection={status}
+      matchId={(status.game?.publicState.matchId ?? status.blackjack?.matchId)!} />}
     <div className="camera-hint" aria-hidden="true"><span className="desktop-hint">Drag to look · Scroll to zoom</span><span className="touch-hint">Drag to look · Pinch to zoom</span></div>
 
     <nav className="game-toolbar" aria-label="Character and camera controls">

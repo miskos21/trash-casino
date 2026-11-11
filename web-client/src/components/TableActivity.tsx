@@ -8,13 +8,14 @@ function EventRow({ event, name }: { event: PublicGameEvent; name: (id: string |
     <div>
       {event.type === 'BID' && <><strong>{name(event.actorId)}</strong><span className="event-claim">claimed {event.bid?.quantity} × <DieFace value={event.bid!.face} small /></span></>}
       {event.type === 'CALL_BLUFF' && <><strong>{name(event.actorId)}</strong><span>called bluff</span></>}
-      {event.type === 'ROUND_RESULT' && <><strong>{name(event.loserId)} lost a die</strong><span>{event.actualCount} matching · claim was {event.bid?.quantity} × {event.bid?.face}</span></>}
+      {event.type === 'ROUND_RESULT' && <><strong>{name(event.loserId)} paid a chip to {name(event.winnerId)}</strong><span>{event.actualCount} matching · claim was {event.bid?.quantity} × {event.bid?.face}</span></>}
       {event.type === 'ROUND_START' && <><strong>Round {event.round}</strong><span>{name(event.actorId)} starts</span></>}
-      {event.type === 'GAME_OVER' && <><strong>{name(event.actorId)} wins</strong><span>Last player with dice</span></>}
-      {event.type === 'PLAYER_LEFT' && <><strong>{name(event.actorId)} left the match</strong><span>All their dice are forfeited. Any open claim is cancelled.</span></>}
+      {event.type === 'GAME_OVER' && <><strong>{event.actorId ? name(event.actorId) + ' wins' : 'Match ended in a tie'}</strong><span>Most chips at the end</span></>}
+      {event.type === 'PLAYER_LEFT' && <><strong>{name(event.actorId)} left the match</strong><span>They keep their chips. Any open claim is cancelled.</span></>}
       {event.cause === 'TIMEOUT' && <small>Automatic · turn timed out</small>}
       {event.cause === 'UNAVAILABLE' && <small>Automatic · player unavailable</small>}
-      {event.cause === 'NPC' && event.type !== 'ROUND_RESULT' && <small>NPC move</small>}
+      {event.cause === 'NPC' && event.type !== 'ROUND_RESULT' && <small>Agent move</small>}
+      {event.cause === 'NPC_FALLBACK' && event.type !== 'ROUND_RESULT' && <small>Agent fallback · its proposal was rejected or too slow</small>}
     </div>
   </li>;
 }
@@ -31,7 +32,7 @@ export function TableActivity({ state, reveal, revealActive }: {
       aria-controls="activity-content" onClick={() => setOpen(!expanded)}>{expanded ? 'Hide' : 'Show moves'}</button></header>
     <div id="activity-content" className="activity-content" hidden={!expanded}>
       {currentReveal && <details className="last-reveal" key={currentReveal.matchId + '-' + currentReveal.round} open={revealActive || undefined}>
-        <summary>Round {currentReveal.round}: {name(currentReveal.loserId)} lost a die</summary>
+        <summary>Round {currentReveal.round}: {name(currentReveal.loserId)} paid a chip to {name(currentReveal.winnerId)}</summary>
         <p>{currentReveal.actualCount} matching dice found. The claim was {currentReveal.bid.quantity} × {currentReveal.bid.face}.</p>
         {currentReveal.dice.map((seat) => <div className="revealed-seat" key={seat.playerId}><strong>{name(seat.playerId)}</strong>
           <div>{seat.dice.map((value, i) => <DieFace key={i} value={value} small highlighted={value === currentReveal.bid.face} />)}{!seat.dice.length && <small>Out</small>}</div>

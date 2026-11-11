@@ -8,13 +8,14 @@ import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
 public class Protocol {
     private final ObjectMapper mapper;
-    private final JsonSchema clientSchema;
+    private final JsonSchema clientSchema, agentActionSchema;
 
     public Protocol(ObjectMapper mapper) throws IOException {
         this.mapper = mapper.copy().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
@@ -28,6 +29,9 @@ public class Protocol {
             inbound.set("$defs", root.get("$defs"));
             inbound.put("$ref", "#/$defs/ClientMessage");
             clientSchema = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012).getSchema(inbound);
+            var agentAction = inbound.deepCopy();
+            agentAction.put("$ref", "#/$defs/AgentAction");
+            agentActionSchema = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012).getSchema(agentAction);
         }
     }
 
@@ -37,6 +41,16 @@ public class Protocol {
             throw new IllegalArgumentException("Invalid client message");
         }
         return node;
+    }
+
+    /** Strictly parses untrusted JSON: duplicate keys and trailing tokens are rejected. */
+    public JsonNode readStrict(String text) throws IOException {
+        return mapper.readTree(text);
+    }
+
+    /** Shared-schema violations of an LLM reply; empty when it matches {@code AgentAction}. */
+    public List<String> agentActionErrors(JsonNode node) {
+        return agentActionSchema.validate(node).stream().map(Object::toString).toList();
     }
 
     public String message(String type, JsonNode requestId, Object payload) throws IOException {

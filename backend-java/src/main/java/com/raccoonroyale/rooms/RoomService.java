@@ -1,12 +1,20 @@
 package com.raccoonroyale.rooms;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.raccoonroyale.ai.AgentActionParser;
+import com.raccoonroyale.ai.AgentBrain;
+import com.raccoonroyale.ai.AgentContext;
+import com.raccoonroyale.ai.MockAgentBrain;
 import com.raccoonroyale.games.BlackjackGame;
 import com.raccoonroyale.games.LiarsDiceGame;
 import com.raccoonroyale.websocket.Protocol;
 import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -17,16 +25,30 @@ import org.springframework.web.socket.WebSocketSession;
 /** Bounded in-memory free-play rooms. A guest session never proves wallet ownership. */
 @Service
 public class RoomService {
+    private static final Logger log = LoggerFactory.getLogger(RoomService.class);
+    static final int CHAT_BURST = 4;
+    static final long CHAT_WINDOW_MS = 20_000;
+    static final long AGENT_TALK_GAP_MS = 15_000; // Unprompted table talk after a move, per agent.
     private final Protocol protocol;
+    private final AgentBrain brain;
+    private final AgentActionParser parser;
     private final SecureRandom random = new SecureRandom();
     private final Map<String, Peer> peers = new HashMap<>();
     private final Map<String, Room> rooms = new LinkedHashMap<>();
-    private final long turnMillis, npcMillis, revealMillis;
-    public RoomService(Protocol protocol,
+    private final long turnMillis, npcMillis, revealMillis, agentTimeoutMillis;
+    @Autowired
+    public RoomService(Protocol protocol, AgentBrain brain, AgentActionParser parser,
         @Value("$" + "{app.game.turn-timeout-ms:30000}") long turnMillis,
         @Value("$" + "{app.game.npc-delay-ms:1100}") long npcMillis,
-        @Value("$" + "{app.game.reveal-ms:4000}") long revealMillis) {
-        this.protocol = protocol; this.turnMillis = turnMillis; this.npcMillis = npcMillis; this.revealMillis = revealMillis;
+        @Value("$" + "{app.game.reveal-ms:4000}") long revealMillis,
+        @Value("$" + "{app.llm.timeout-ms:5000}") long agentTimeoutMillis) {
+        this.protocol = protocol; this.brain = brain; this.parser = parser;
+        this.turnMillis = turnMillis; this.npcMillis = npcMillis; this.revealMillis = revealMillis;
+        this.agentTimeoutMillis = agentTimeoutMillis;
+    }
+    /** Rule tests: the TEMPORARY MOCK brain answers synchronously, so ticks stay deterministic. */
+    public RoomService(Protocol protocol, long turnMillis, long npcMillis, long revealMillis) {
+        this(protocol, new MockAgentBrain(), new AgentActionParser(protocol), turnMillis, npcMillis, revealMillis, 5000);
     }
     private static class Peer {
         final WebSocketSession socket;
@@ -43,6 +65,7 @@ public class RoomService {
         boolean ready, abandoned;
         WebSocketSession socket;
         long disconnectedAt;
+        final ArrayDeque<Long> chatTimes=new ArrayDeque<>();
         Seat(String id, String name, String avatar, String token, boolean npc, WebSocketSession socket) {
             this.id=id; this.name=name; this.avatar=avatar; this.token=token;
             this.npc=npc; this.socket=socket; this.ready=npc;
@@ -57,19 +80,25 @@ public class RoomService {
         BlackjackGame blackjack;
         Map<String,Seat> dealt=Map.of(); // Hands outlive seats that leave after the hand ends.
         LiarsDiceGame.RoundResult reveal;
-        long revision, deadline, npcAt, resumeAt, lastActivity, eventSequence;
+        long revision, deadline, npcAt, resumeAt, lastActivity, eventSequence, chatSequence;
+        final List<ChatMessage> chat=new ArrayList<>();
+        String pendingTurn; // matchId:revision of an agent turn awaiting its brain.
+        final Set<String> replying=new HashSet<>(); // Agents with a chat reply in flight.
         Room(String code,String gameType) { this.code=code; this.gameType=gameType; this.lastActivity=System.currentTimeMillis(); }
         LiarsDiceGame.PublicState state() { return game.viewFor(seats.getFirst().id).publicState(); }
         String phase() {
             if(blackjack!=null) return blackjack.publicState().shoeOver() ? "FINISHED" : "IN_PROGRESS";
-            return game==null ? "LOBBY" : state().winnerId()==null ? "IN_PROGRESS" : "FINISHED";
+            return game==null ? "LOBBY" : state().finished() ? "FINISHED" : "IN_PROGRESS";
         }
     }
     public record RoomSeat(String playerId,String displayName,String avatar,boolean npc,boolean ready,boolean connected,String presence) {}
-    public record RoomState(String roomId,String roomCode,String game,String phase,String hostId,String youId,List<RoomSeat> participants) {}
-    public record Participant(String playerId,String displayName,String avatar,boolean npc,int diceCount) {}
+    public record RoomState(String roomId,String roomCode,String game,String phase,String hostId,String youId,List<RoomSeat> participants,
+        String agentMode) {}
+    public record ChatMessage(String matchId,String messageId,String senderId,String senderName,boolean agent,String text,long sentAtEpochMillis) {}
+    public record Participant(String playerId,String displayName,String avatar,boolean npc,int diceCount,int chips) {}
     public record PublicGameEvent(String id,int round,String type,String actorId,LiarsDiceGame.Bid bid,
-        String loserId,Integer actualCount,String cause) {}
+        String loserId,Integer actualCount,String cause,String winnerId) {}
+    public record Standing(String playerId,int chips) {}
     public record PublicState(String matchId,String phase,int round,List<Participant> participants,
         String currentPlayerId,LiarsDiceGame.Bid lastBid,String lastBidderId,String winnerId,
         long revision,long deadlineEpochMillis,long resumeAtEpochMillis,List<PublicGameEvent> history) {}
@@ -134,6 +163,8 @@ public class RoomService {
                 case "ROOM_START" -> start(peer,payload);
                 case "PLAYER_BID","CALL_BLUFF" -> action(peer,type,payload);
                 case "BLACKJACK_HIT","BLACKJACK_STAND" -> blackjackAction(peer,type,payload);
+                case "PLAYER_CHAT" -> playerChat(peer,payload);
+                case "MATCH_END" -> endMatch(peer,payload);
                 default -> throw new Rejected("NOT_IMPLEMENTED","This feature is not connected yet.");
             }
             peer.requests.put(key,message.toString());
@@ -199,8 +230,9 @@ public class RoomService {
             try {old.close(CloseStatus.POLICY_VIOLATION);}catch(IOException ignored) {}
         }
         publish(room);
+        for(var line:room.chat) send(found.socket,"CHAT_MESSAGE",null,line);
         if(room.reveal!=null) sendReveal(room,found.socket);
-        if(room.game!=null&&room.state().winnerId()!=null) result(room,found.socket);
+        if(room.game!=null&&room.state().finished()) result(room,found.socket);
     }
     private Room room(Peer peer) {
         Room room=rooms.get(peer.roomId);
@@ -229,6 +261,7 @@ public class RoomService {
             "Liar’s Dice needs at least two players. Add an agent or invite a friend.");
         room.matchId=UUID.randomUUID().toString();
         room.reveal=null;room.revision=0;room.resumeAt=0;room.eventSequence=0;room.history.clear();
+        room.chat.clear();room.pendingTurn=null;room.replying.clear();
         if(room.gameType.equals("BLACKJACK")) {
             // The house deals without a seat; humans and agents each hold a hand.
             room.dealt=new LinkedHashMap<>();room.seats.forEach(s->room.dealt.put(s.id,s));
@@ -268,7 +301,10 @@ public class RoomService {
         else scheduleTurn(room);
     }
     private void event(Room room,String type,int round,String actor,LiarsDiceGame.Bid bid,String loser,Integer count,String cause) {
-        room.history.add(new PublicGameEvent(room.matchId+"-"+(++room.eventSequence),round,type,actor,bid,loser,count,cause));
+        event(room,type,round,actor,bid,loser,count,cause,null);
+    }
+    private void event(Room room,String type,int round,String actor,LiarsDiceGame.Bid bid,String loser,Integer count,String cause,String winner) {
+        room.history.add(new PublicGameEvent(room.matchId+"-"+(++room.eventSequence),round,type,actor,bid,loser,count,cause,winner));
         if(room.history.size()>60) room.history.removeFirst();
     }
     private void apply(Room room,String actor,LiarsDiceGame.Action action,String cause) {
@@ -279,17 +315,31 @@ public class RoomService {
             action instanceof LiarsDiceGame.Bid bid?bid:before.lastBid(),null,null,cause);
         if(reveal!=null) {
             room.reveal=reveal;room.resumeAt=System.currentTimeMillis()+revealMillis;
-            event(room,"ROUND_RESULT",reveal.round(),actor,reveal.bid(),reveal.loserId(),reveal.actualCount(),cause);
+            event(room,"ROUND_RESULT",reveal.round(),actor,reveal.bid(),reveal.loserId(),reveal.actualCount(),cause,reveal.winnerId());
             for(Seat s:room.seats) if(s.socket!=null) sendReveal(room,s.socket);
         }
-        if(room.state().winnerId()!=null) {
-            room.deadline=0;room.seats.forEach(s->s.ready=s.npc);
-            event(room,"GAME_OVER",before.round(),room.state().winnerId(),null,null,null,null);
-            for(Seat s:room.seats) if(s.socket!=null) result(room,s.socket);
+        if(room.state().finished()) {
+            finishMatch(room,before.round());
         } else {
             if(reveal!=null) event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
             scheduleTurn(room);
         }
+        publish(room);
+    }
+    private void finishMatch(Room room,int round) {
+        room.deadline=0;room.seats.forEach(s->s.ready=s.npc);
+        event(room,"GAME_OVER",round,room.state().winnerId(),null,null,null,null);
+        for(Seat s:room.seats) if(s.socket!=null) result(room,s.socket);
+    }
+    /** Host only. Chips become the final standings; there is no other way to stop a running match early. */
+    private void endMatch(Peer peer,JsonNode payload) {
+        Room room=room(peer);assertRoom(room,payload);
+        require(peer.playerId.equals(room.hostId),"NOT_HOST","Only the host can end the match.");
+        require(room.game!=null&&room.phase().equals("IN_PROGRESS"),"ILLEGAL_ACTION","No running Liar’s Dice match.");
+        require(room.matchId.equals(payload.path("matchId").asText()),"STALE_STATE","Wrong match.");
+        room.game.end();
+        room.revision++;room.pendingTurn=null;room.lastActivity=System.currentTimeMillis();
+        finishMatch(room,room.state().round());
         publish(room);
     }
     private void scheduleTurn(Room room) {
@@ -319,14 +369,12 @@ public class RoomService {
             if(!Objects.equals(before.currentPlayerId(),after.currentPlayerId()) || before.handOver()!=after.handOver()) afterBlackjackMove(room);
         } else {
             boolean active=room.state().diceCounts().get(seat.id)>0;
-            room.game.forfeit(seat.id);
+            room.game.leave(seat.id); // The leaver keeps their chips; they stop playing.
             event(room,"PLAYER_LEFT",room.state().round(),seat.id,null,null,null,null);
             if(!active) return;
             room.reveal=null;room.resumeAt=0;
-            if(room.state().winnerId()!=null) {
-                room.deadline=0;room.seats.forEach(s->s.ready=s.npc);
-                event(room,"GAME_OVER",room.state().round(),room.state().winnerId(),null,null,null,null);
-                for(Seat s:room.seats) if(s.socket!=null) result(room,s.socket);
+            if(room.state().finished()) {
+                finishMatch(room,room.state().round());
             } else {
                 event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
                 scheduleTurn(room);
@@ -339,7 +387,7 @@ public class RoomService {
             boolean connected=s.npc||s.socket!=null&&s.socket.isOpen();
             return new RoomSeat(s.id,s.name,s.avatar,s.npc,s.ready,connected,s.abandoned?"LEFT":connected?"ONLINE":"DISCONNECTED");
         }).toList();
-        send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.gameType,room.phase(),room.hostId,recipient.id,seats));
+        send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.gameType,room.phase(),room.hostId,recipient.id,seats,brain.mode()));
         if(room.blackjack!=null) {
             var state=room.blackjack.publicState();
             var hands=state.players().stream().map(h->{Seat s=room.dealt.get(h.playerId());
@@ -354,7 +402,7 @@ public class RoomService {
         }
         if(room.game==null) return;
         var view=room.game.viewFor(recipient.id);var state=view.publicState();
-        var participants=room.seats.stream().map(s->new Participant(s.id,s.name,s.avatar,s.npc,state.diceCounts().get(s.id))).toList();
+        var participants=room.seats.stream().map(s->new Participant(s.id,s.name,s.avatar,s.npc,state.diceCounts().get(s.id),state.chips().get(s.id))).toList();
         send(recipient.socket,"GAME_STATE",null,new PlayerState(new PublicState(room.matchId,room.phase(),state.round(),participants,
             state.currentPlayerId(),state.lastBid(),state.lastBidderId(),state.winnerId(),room.revision,room.deadline,room.resumeAt,
             List.copyOf(room.history)),view.ownDice()));
@@ -364,10 +412,14 @@ public class RoomService {
         var r=room.reveal;
         var dice=r.revealedDice().entrySet().stream().map(e->Map.<String,Object>of("playerId",e.getKey(),"dice",e.getValue())).toList();
         send(socket,"DICE_REVEAL",null,Map.of("matchId",room.matchId,"round",r.round(),"dice",dice,"loserId",r.loserId(),
-            "bidderId",r.bidderId(),"callerId",r.callerId(),"bid",r.bid(),"actualCount",r.actualCount()));
+            "bidderId",r.bidderId(),"callerId",r.callerId(),"bid",r.bid(),"actualCount",r.actualCount(),"winnerId",r.winnerId()));
     }
     private void result(Room room,WebSocketSession socket) {
-        send(socket,"GAME_RESULT",null,Map.of("matchId",room.matchId,"winnerId",room.state().winnerId(),"settlement","NOT_STARTED"));
+        var result=new LinkedHashMap<String,Object>(); // winnerId is null on a tie.
+        result.put("matchId",room.matchId);result.put("winnerId",room.state().winnerId());
+        result.put("standings",room.seats.stream().map(s->new Standing(s.id,room.state().chips().get(s.id))).toList());
+        result.put("settlement","NOT_STARTED");
+        send(socket,"GAME_RESULT",null,result);
     }
     /** Humans, deterministic NPCs, and timeouts all use the same validated engine actions. */
     @Scheduled(fixedDelay=200)
@@ -403,9 +455,148 @@ public class RoomService {
                 continue;
             }
             String actor=room.state().currentPlayerId();Seat seat=seat(room,actor);
-            if((seat.npc||seat.abandoned)?now>=room.npcAt:now>=room.deadline)
-                apply(room,actor,room.game.fallbackFor(actor),seat.npc?"NPC":seat.abandoned?"UNAVAILABLE":"TIMEOUT");
+            if(seat.npc) {if(now>=room.npcAt&&room.pendingTurn==null) askAgentTurn(room,seat);}
+            else if(seat.abandoned?now>=room.npcAt:now>=room.deadline)
+                apply(room,actor,room.game.fallbackFor(actor),seat.abandoned?"UNAVAILABLE":"TIMEOUT");
         }
+    }
+    /**
+     * Asks the agent's brain for a Liar's Dice move without holding the room lock while it thinks. The reply is
+     * applied only if the turn has not moved on; an invalid reply, an illegal move, a timeout, or an error all
+     * fall back to the engine's deterministic legal move.
+     */
+    private void askAgentTurn(Room room,Seat agent) {
+        String key=room.matchId+":"+room.revision;
+        room.pendingTurn=key;
+        var context=agentContext(room,agent,AgentContext.Task.TURN);
+        brain.respond(context).orTimeout(agentTimeoutMillis,TimeUnit.MILLISECONDS)
+            .whenComplete((reply,failure)->agentTurnResult(room.id,key,agent.id,context,reply,failure));
+    }
+    synchronized void agentTurnResult(String roomId,String key,String agentId,AgentContext context,String reply,Throwable failure) {
+        Room room=rooms.get(roomId);
+        if(room==null||!key.equals(room.pendingTurn)) return;
+        room.pendingTurn=null;
+        if(!key.equals(room.matchId+":"+room.revision)) return; // Stale: the turn changed while the agent was thinking.
+        if(room.game==null||!room.phase().equals("IN_PROGRESS")||!agentId.equals(room.state().currentPlayerId())) return;
+        String validation, applied;
+        String talk="";
+        try {
+            if(failure!=null) throw new AgentActionParser.InvalidAgentOutput(failure instanceof java.util.concurrent.TimeoutException
+                ||failure.getCause() instanceof java.util.concurrent.TimeoutException?"timeout":"brain error: "+failure.getClass().getSimpleName());
+            var proposal=parser.parse(reply,AgentActionParser.TURN_ACTIONS);
+            LiarsDiceGame.Action action=proposal.action().equals("CALL_BLUFF")?new LiarsDiceGame.CallBluff()
+                :new LiarsDiceGame.Bid(proposal.bid().quantity(),proposal.bid().face());
+            talk=proposal.message();
+            apply(room,agentId,action,"NPC"); // The engine rejects illegal bids before changing anything.
+            validation="VALID";applied=String.valueOf(action);
+        } catch(AgentActionParser.InvalidAgentOutput|IllegalArgumentException|IllegalStateException rejected) {
+            validation="REJECTED: "+rejected.getMessage();talk="";
+            var fallback=room.game.fallbackFor(agentId);
+            apply(room,agentId,fallback,"NPC_FALLBACK");
+            applied=fallback+" (fallback)";
+        }
+        logAgent(context,reply,validation,applied);
+        if(!talk.isEmpty()&&shouldTalk(room,agentId,talk)) postChat(room,agentId,seat(room,agentId).name,true,talk);
+    }
+    /**
+     * Models repeat themselves and talk on every move. Unprompted table talk is posted only after a quiet gap and
+     * only if it does not open like one of the agent's recent lines. Replies to players are always posted.
+     */
+    private boolean shouldTalk(Room room,String agentId,String talk) {
+        long now=System.currentTimeMillis();
+        var own=room.chat.stream().filter(c->c.senderId().equals(agentId)).toList();
+        if(!own.isEmpty()&&now-own.getLast().sentAtEpochMillis()<AGENT_TALK_GAP_MS) return false;
+        String opening=opening(talk);
+        return own.subList(Math.max(0,own.size()-5),own.size()).stream().noneMatch(c->opening(c.text()).equals(opening));
+    }
+    private static String opening(String text) {
+        var words=text.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]"," ").trim().split("\\s+");
+        return String.join(" ",Arrays.copyOf(words,Math.min(3,words.length)));
+    }
+    private void playerChat(Peer peer,JsonNode payload) {
+        Room room=room(peer);
+        require(room.matchId!=null&&room.matchId.equals(payload.path("matchId").asText()),"STALE_STATE","Chat belongs to the current match.");
+        Seat seat=seat(room,peer.playerId);
+        long now=System.currentTimeMillis();
+        while(!seat.chatTimes.isEmpty()&&now-seat.chatTimes.peekFirst()>CHAT_WINDOW_MS) seat.chatTimes.pollFirst();
+        require(seat.chatTimes.size()<CHAT_BURST,"RATE_LIMITED","Slow down: "+CHAT_BURST+" messages per "+CHAT_WINDOW_MS/1000+" seconds.");
+        String text=payload.path("message").asText().strip();
+        require(!text.isEmpty(),"INVALID_MESSAGE","Write a message first.");
+        seat.chatTimes.addLast(now);
+        postChat(room,seat.id,seat.name,false,text);
+        Seat agent=addressedAgent(room,text);
+        if(agent!=null&&room.replying.add(agent.id)) {
+            var context=agentContext(room,agent,AgentContext.Task.CHAT_REPLY);
+            String matchId=room.matchId;
+            brain.respond(context).orTimeout(agentTimeoutMillis,TimeUnit.MILLISECONDS)
+                .whenComplete((reply,failure)->agentChatResult(room.id,matchId,agent.id,context,reply,failure));
+        }
+    }
+    /** An agent named in the message answers; otherwise the first agent at the table does. One reply in flight each. */
+    private Seat addressedAgent(Room room,String text) {
+        var agents=room.seats.stream().filter(s->s.npc).toList();
+        String lower=text.toLowerCase(Locale.ROOT);
+        return agents.stream().filter(a->lower.contains(a.name.split(" ")[0].toLowerCase(Locale.ROOT))).findFirst()
+            .orElse(agents.isEmpty()?null:agents.getFirst());
+    }
+    synchronized void agentChatResult(String roomId,String matchId,String agentId,AgentContext context,String reply,Throwable failure) {
+        Room room=rooms.get(roomId);
+        if(room==null) return;
+        room.replying.remove(agentId);
+        if(!matchId.equals(room.matchId)) return;
+        try {
+            if(failure!=null) throw new AgentActionParser.InvalidAgentOutput("no reply: "+failure.getClass().getSimpleName());
+            var proposal=parser.parse(reply,AgentActionParser.CHAT_ACTIONS);
+            postChat(room,agentId,seat(room,agentId).name,true,proposal.message());
+            logAgent(context,reply,"VALID","CHAT");
+        } catch(AgentActionParser.InvalidAgentOutput|Rejected rejected) {
+            logAgent(context,reply,"REJECTED: "+rejected.getMessage(),"no chat");
+        }
+    }
+    private void postChat(Room room,String senderId,String senderName,boolean agent,String text) {
+        var line=new ChatMessage(room.matchId,room.matchId+"-chat-"+(++room.chatSequence),senderId,senderName,agent,text,System.currentTimeMillis());
+        room.chat.add(line);
+        if(room.chat.size()>40) room.chat.removeFirst();
+        room.lastActivity=System.currentTimeMillis();
+        for(Seat s:room.seats) if(!s.npc&&s.socket!=null) send(s.socket,"CHAT_MESSAGE",null,line);
+    }
+    /** Builds only what this agent may know: its own engine view, public state, and recent public chat. */
+    private AgentContext agentContext(Room room,Seat agent,AgentContext.Task task) {
+        var chat=room.chat.subList(Math.max(0,room.chat.size()-8),room.chat.size()).stream()
+            .map(c->new AgentContext.ChatLine(c.senderName(),c.agent(),c.text())).toList();
+        Map<String,String> names=new HashMap<>();
+        room.seats.forEach(s->names.put(s.id,s.name));
+        AgentContext.LiarsDice dice=null;AgentContext.Blackjack cards=null;
+        if(room.game!=null) {
+            var view=room.game.viewFor(agent.id);var state=view.publicState();
+            var counts=new LinkedHashMap<String,Integer>();
+            state.diceCounts().forEach((id,count)->counts.put(names.getOrDefault(id,"Player"),count));
+            var events=room.history.subList(Math.max(0,room.history.size()-8),room.history.size()).stream()
+                .map(e->e.type()+" by "+names.getOrDefault(e.actorId(),"-")+(e.bid()==null?"":" "+e.bid().quantity()+"x"+e.bid().face())).toList();
+            var last=state.lastBid();
+            var chips=new LinkedHashMap<String,Integer>();
+            state.chips().forEach((id,count)->chips.put(names.getOrDefault(id,"Player"),count));
+            dice=new AgentContext.LiarsDice(state.round(),view.ownDice(),counts,chips,counts.values().stream().mapToInt(i->i).sum(),
+                last==null?null:new AgentContext.Bid(last.quantity(),last.face()),last==null?null:names.get(state.lastBidderId()),events);
+        } else if(room.blackjack!=null) {
+            var state=room.blackjack.publicState();
+            List<String> own=List.of();int total=0;var others=new LinkedHashMap<String,List<String>>();
+            for(var hand:state.players()) {
+                var shown=hand.cards().stream().map(c->c.rank()+c.suit()).toList();
+                if(hand.playerId().equals(agent.id)) {own=shown;total=hand.total();}
+                else others.put(names.getOrDefault(hand.playerId(),"Player"),shown);
+            }
+            String up=state.dealerCards().isEmpty()?null:state.dealerCards().getFirst().rank()+state.dealerCards().getFirst().suit();
+            cards=new AgentContext.Blackjack(own,total,up,others);
+        }
+        return new AgentContext(room.matchId,agent.id,agent.name,AgentContext.Persona.forSeat(agent.id),task,room.gameType,dice,cards,chat);
+    }
+    /** One structured line per agent decision, by match. No API keys or resume tokens ever reach a context. */
+    private void logAgent(AgentContext context,String reply,String validation,String applied) {
+        log.atInfo().addKeyValue("matchId",context.matchId()).addKeyValue("agentId",context.agentId())
+            .addKeyValue("task",context.task()).addKeyValue("brain",brain.mode())
+            .addKeyValue("prompt",com.raccoonroyale.ai.AgentPrompt.user(context)).addKeyValue("response",reply)
+            .addKeyValue("validation",validation).addKeyValue("result",applied).log("agent decision");
     }
     /** Application heartbeat also detects half-open sockets after network loss. */
     synchronized void expireConnections(long now) {

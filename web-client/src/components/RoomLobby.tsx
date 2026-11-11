@@ -29,7 +29,7 @@ export function RoomLobby({ connection: c, avatar, onStarted }: { connection: Ga
         <strong>{option.count}</strong><small>{option.name}</small></button>)}
     </div>
     <p className="free-play-note">No buy-in. No token rewards. {game === 'BLACKJACK'
-      ? 'The house deals. Beat the dealer without going over 21.' : 'Win by being the last player with dice.'}
+      ? 'The house deals. Beat the dealer without going over 21.' : 'Everyone keeps 5 dice; a lost challenge costs one chip. Most chips wins.'}
       {' '}Agents are rule-based NPC players and take seats from the four available.
       {game === 'LIARS_DICE' && agents === 0 ? ' Liar’s Dice needs a second player to start.' : ''}</p>
     <GameRules game={game} />
