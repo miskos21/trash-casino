@@ -51,6 +51,8 @@ export function BlackjackHud({ connection: c, onMenu }: { connection: GameConnec
           <img src={avatars.find((a) => a.id === hand.avatar)?.portrait} alt="" />
           <div><strong>{hand.displayName}{hand.playerId === c.room!.youId ? ' (you)' : hand.npc ? ' · agent' : ''}</strong>
             <small>{handLabel(hand, playing)}</small>
+            {/* Opponents' face-up cards, so their hits and busts are readable without looking at the felt. */}
+            {hand.cards.length > 0 && <span className="seat-cards">{hand.cards.map((card, i) => <PlayingCard key={i} card={card} small />)}</span>}
             <SeatPresence seat={seat} />
           </div>
           {playing && seat?.presence === 'ONLINE' && <span className="playing-badge">Playing</span>}

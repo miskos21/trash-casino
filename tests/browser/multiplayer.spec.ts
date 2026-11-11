@@ -5,8 +5,9 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: /^Choose character/ }).click();
   await page.getByRole('button', { name: 'Capybara', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose a game' }).click();
   await page.getByLabel('Player name', { exact: true }).fill('Host');
   await page.getByRole('button', { name: 'Liar’s Dice', exact: true }).click(); // Blackjack is the default.
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
@@ -16,7 +17,7 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   const guest = await context.newPage();
   guest.on('pageerror', (e) => errors.push(e.message));
   await guest.goto('/');
-  await guest.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await guest.getByRole('button', { name: 'Play', exact: true }).click();
   await guest.getByLabel('Player name', { exact: true }).fill('Guest');
   await guest.getByLabel('Room code to join').fill(code!);
   await guest.getByRole('button', { name: 'Join room', exact: true }).click();

@@ -30,9 +30,11 @@ test('fills the viewport, orbits the table, and selects a real portrait through 
   await page.mouse.up();
   await page.mouse.wheel(0, -180);
 
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  // Character and game selection are separate screens.
+  await page.getByRole('button', { name: /^Choose character/ }).click();
   const menu = page.getByRole('dialog');
   await expect(menu).toBeVisible();
+  await expect(menu.getByRole('heading', { name: 'Choose your character' })).toBeVisible();
   await expect(menu.getByRole('img')).toHaveCount(6);
   for (const image of await menu.getByRole('img').all()) {
     expect(await image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true);
@@ -42,6 +44,9 @@ test('fills the viewport, orbits the table, and selects a real portrait through 
   await menu.getByRole('button', { name: 'Frog', exact: true }).click();
   await expect(menu.getByRole('button', { name: 'Frog', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(menu.getByRole('button', { name: 'Raccoon', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(menu.getByRole('button', { name: 'Create room', exact: true })).toHaveCount(0);
+  await menu.getByRole('button', { name: 'Choose a game' }).click();
+  await expect(menu.getByText('Playing as')).toBeVisible();
   await expect(menu.getByRole('button', { name: 'Create room', exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('menu.png') });
   await menu.getByRole('button', { name: 'Back to table' }).click();
@@ -55,14 +60,14 @@ test('fills the viewport, orbits the table, and selects a real portrait through 
   await expect(menu).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(menu).not.toBeVisible();
-  await expect(page.getByText(/TRASH has no real-world value/)).toBeVisible();
+  await expect(page.locator('.testnet-notice')).toContainText('TRASH has no real-world value');
   expect(errors).toEqual([]);
 });
 
 test('keeps actual connection status and retry inside the menu', async ({ page, context }) => {
   await page.goto('/');
   await expect(page.locator('.connection-indicator')).toHaveAttribute('data-connection', 'online');
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
   await page.getByText('Connection', { exact: true }).click();
   await expect(page.locator('[data-status="online"]')).toHaveCount(2);
   await context.setOffline(true);

@@ -35,6 +35,9 @@ export function App() {
   const status = useGameConnection();
   const wallet = useWallet();
   const [menuOpen, setMenuOpen] = useState(false);
+  // Character and game selection are separate screens of the same dialog.
+  const [menuView, setMenuView] = useState<'game' | 'character'>('game');
+  const openMenu = (view: 'game' | 'character') => { setMenuView(status.room ? 'game' : view); setMenuOpen(true); };
   const [camera, setCamera] = useState<{ view: CameraView; revision: number }>({ view: 'table', revision: 0 });
   const [fullscreen, setFullscreen] = useState(false);
   const [notice, setNotice] = useState('');
@@ -64,6 +67,7 @@ export function App() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !document.querySelector('dialog[open]')) {
         event.preventDefault();
+        setMenuView('game');
         setMenuOpen(true);
       }
     };
@@ -98,12 +102,15 @@ export function App() {
       <div className="game-brand"><span className="brand-monogram">T</span><span>TRASHNINO</span></div>
       <div className="header-actions">
         <button className="connection-indicator" data-connection={connection}
-          aria-label={'Connection ' + connection + '. Open menu'} onClick={() => setMenuOpen(true)} title={'Connection ' + connection}>
+          aria-label={'Connection ' + connection + '. Open menu'} onClick={() => openMenu('game')} title={'Connection ' + connection}>
           <span className="status-dot" /><span className="sr-only">{connection}</span>
         </button>
-        <button className="hud-button menu-trigger" aria-label="Open menu" aria-haspopup="dialog" aria-expanded={menuOpen}
-          onClick={() => setMenuOpen(true)}><GameIcon name="menu" /><span>{status.room ? 'Room & players' : 'Play & character'}</span></button>
-        {wallet.session && <button className="balance-chip" onClick={() => setMenuOpen(true)} title="Casino balance · wallet balance"
+        {/* Home: your animal opens character selection. In a room: the room menu. */}
+        {!status.room ? <button className="character-chip" aria-label={'Choose character. Current: ' + selected.name} aria-haspopup="dialog"
+          onClick={() => openMenu('character')}><Portrait animal={selected} /><strong>{selected.name}</strong><GameIcon name="chevron" /></button>
+          : <button className="hud-button menu-trigger" aria-label="Open menu" aria-haspopup="dialog" aria-expanded={menuOpen}
+            onClick={() => openMenu('game')}><GameIcon name="menu" /><span>Room &amp; players</span></button>}
+        {wallet.session && <button className="balance-chip" onClick={() => openMenu('game')} title="Casino balance · wallet balance"
           aria-label={"Casino balance " + (wallet.balances ? formatTrash(wallet.balances.casino) : "unknown") + " TRASH. Open wallet"}>
           <strong>{wallet.balances ? formatTrash(wallet.balances.casino) : "…"}</strong><span>TRASH in casino</span>
           <small>wallet {wallet.balances ? formatTrash(wallet.balances.wallet) : "…"}</small></button>}
@@ -113,17 +120,15 @@ export function App() {
     <TablePresence room={status.room} />
     <FundingPanel connection={status} wallet={wallet} />
 
-    {status.room?.game === 'BLACKJACK' ? <BlackjackHud connection={status} onMenu={() => setMenuOpen(true)} />
-      : <MatchHud connection={status} onMenu={() => setMenuOpen(true)} />}
+    {status.room?.game === 'BLACKJACK' ? <BlackjackHud connection={status} onMenu={() => openMenu('game')} />
+      : <MatchHud connection={status} onMenu={() => openMenu('game')} />}
     {(status.game?.publicState.matchId ?? status.blackjack?.matchId) && <ChatPanel connection={status}
       matchId={(status.game?.publicState.matchId ?? status.blackjack?.matchId)!} />}
     <div className="camera-hint" aria-hidden="true"><span className="desktop-hint">Drag to look · Scroll to zoom</span><span className="touch-hint">Drag to look · Pinch to zoom</span></div>
 
-    <nav className="game-toolbar" aria-label="Character and camera controls">
-      <button className="character-trigger" onClick={() => setMenuOpen(true)} aria-label={'Choose character. Current: ' + selected.name}>
-        <Portrait animal={selected} /><span><small>YOUR CHARACTER</small><strong>{selected.name}</strong></span><GameIcon name="chevron" />
-      </button>
-      <span className="toolbar-divider" />
+    {!status.room && <button className="play-button" aria-haspopup="dialog" onClick={() => openMenu('game')}>Play</button>}
+
+    <nav className="game-toolbar" aria-label="Camera controls">
       <button className="hud-button camera-button" onClick={() => focus('character')} aria-label="Look at my character" title="Look at my character">
         <GameIcon name="person" /><span>My character</span>
       </button>
@@ -138,24 +143,41 @@ export function App() {
     {!status.room && <p className="testnet-notice">NEAR TESTNET <span>·</span> TRASH has no real-world value.</p>}
     {notice && <button className="game-notice" role="status" onClick={() => setNotice('')}>{notice}</button>}
 
-    <dialog ref={menu} className="game-menu" aria-labelledby="menu-heading" onClose={() => setMenuOpen(false)}
+    <dialog ref={menu} className={'game-menu ' + (menuView === 'character' ? 'character-view' : 'game-view')} aria-labelledby="menu-heading" onClose={() => setMenuOpen(false)}
       onClick={(event) => { if (event.target === menu.current) setMenuOpen(false); }}>
       <div className="menu-card">
-        <div className="menu-heading"><div><p className="menu-kicker">TRASHNINO</p><h1 id="menu-heading">{status.room ? 'Your room' : 'Play Trashnino'}</h1></div>
+        <div className="menu-heading"><div><p className="menu-kicker">TRASHNINO</p><h1 id="menu-heading">{menuView === 'character' ? 'Choose your character' : status.room ? 'Your room' : 'Play Trashnino'}</h1></div>
           <button className="hud-button" aria-label="Close menu" onClick={() => setMenuOpen(false)}><GameIcon name="close" /></button>
         </div>
-        <h2>Choose your character</h2>
-        <div className="avatar-grid" role="group" aria-label="Animal avatar">
-          {avatars.map((option) => <button key={option.id} className={'avatar-button ' + (avatar === option.id ? 'selected' : '')}
-            disabled={!!status.room} aria-label={option.name} aria-pressed={myAvatar === option.id} onClick={() => { select(option.id); focus('character'); }}>
-            <Portrait animal={option} /><span>{option.name}</span><span className="selection-mark" aria-hidden="true">✓</span>
-          </button>)}
-        </div>
-        <RoomLobby connection={status} wallet={wallet} avatar={avatar} onStarted={() => setMenuOpen(false)} />
-        <WalletPanel wallet={wallet} />
-        {status.room && <div className="menu-help"><GameRules game={status.room.game} /></div>}
-        {status.blackjack && <ShoeDetails connection={status} />}
-        <button className="secondary-button back-to-table" onClick={() => setMenuOpen(false)}>Back to table <GameIcon name="chevron" /></button>
+        {menuView === 'character' ? <>
+          <p className="menu-intro">Your animal sits at your seat at the table. Pick one, then choose a game.</p>
+          <div className="avatar-grid" role="group" aria-label="Animal avatar">
+            {avatars.map((option) => <button key={option.id} className={'avatar-button ' + (avatar === option.id ? 'selected' : '')}
+              disabled={!!status.room} aria-label={option.name} aria-pressed={myAvatar === option.id} onClick={() => { select(option.id); focus('character'); }}>
+              <Portrait animal={option} /><span>{option.name}</span><span className="selection-mark" aria-hidden="true">✓</span>
+            </button>)}
+          </div>
+          <div className="character-actions">
+            <button className="secondary-button" onClick={() => setMenuOpen(false)}>Done</button>
+            <button className="resume-button" onClick={() => setMenuView('game')}>Choose a game <GameIcon name="chevron" /></button>
+          </div>
+        </> : <>
+          {!status.room && <div className="current-character">
+            <Portrait animal={selected} /><span><small>Playing as</small><strong>{selected.name}</strong></span>
+            <button className="secondary-button" onClick={() => setMenuView('character')}>Change character</button>
+          </div>}
+          <div className="menu-columns">
+            <div className="menu-column">
+              <RoomLobby connection={status} wallet={wallet} avatar={avatar} onStarted={() => setMenuOpen(false)} />
+              {status.room && <div className="menu-help"><GameRules game={status.room.game} /></div>}
+              {status.blackjack && <ShoeDetails connection={status} />}
+            </div>
+            <div className="menu-column">
+              <WalletPanel wallet={wallet} />
+            </div>
+          </div>
+          <button className="secondary-button back-to-table" onClick={() => setMenuOpen(false)}>Back to table <GameIcon name="chevron" /></button>
+        </>}
         <details className="menu-details"><summary>Controls</summary><p>Drag to orbit all the way around the table. Scroll or pinch to zoom. Use My character to see your animal’s face. Esc opens or closes this menu.</p></details>
         <details className="menu-details"><summary>Connection</summary>
           <div className="connection-status" aria-live="polite">

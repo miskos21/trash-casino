@@ -51,7 +51,7 @@ export function RoomLobby({ connection: c, wallet, avatar, onStarted }: { connec
         : `Everyone's ${buyIn} TRASH buy-in comes from their casino balance, no wallet popups. The chip leader takes the pot. Agents play with house money.`}
       {' '}{game === 'BLACKJACK'
       ? 'The house deals. Beat the dealer without going over 21.' : 'Everyone keeps 5 dice; a lost challenge costs one chip. Most chips wins.'}
-      {' '}Agents are rule-based NPC players and take seats from the four available.
+      {' '}Agents (Don, Foxy) are AI players who chat and take seats from the four available.
       {game === 'LIARS_DICE' && agents === 0 ? ' Liar’s Dice needs a second player to start.' : ''}</p>
     {paid && !sessionToken && <p className="room-error">Connect your wallet below first.</p>}
     <GameRules game={game} />

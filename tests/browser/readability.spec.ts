@@ -14,8 +14,9 @@ test('four seats keep dice separate from cups and show a consistent public revea
   const peers: { socket: WebSocket; messages: { type: string; payload: any }[]; send: (type: string, payload: unknown) => void }[] = [];
   try {
     await page.goto('/');
-    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+    await page.getByRole('button', { name: /^Choose character/ }).click();
     await page.getByRole('button', { name: 'Frog', exact: true }).click();
+    await page.getByRole('button', { name: 'Choose a game' }).click();
     await page.getByLabel('Player name').fill('Host');
     await page.getByRole('button', { name: 'Liar’s Dice', exact: true }).click(); // Blackjack is the default.
     await page.getByRole('button', { name: 'Create room', exact: true }).click();

@@ -5,7 +5,7 @@ test('a guest plays Blackjack hands from one shoe with two agents against the ho
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
   // Blackjack and one agent (Don) are the defaults.
   await expect(page.getByRole('button', { name: 'Blackjack', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: '1 agent', exact: true })).toHaveAttribute('aria-pressed', 'true');

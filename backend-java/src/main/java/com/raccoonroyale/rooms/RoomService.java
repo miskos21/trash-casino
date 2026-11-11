@@ -807,8 +807,7 @@ public class RoomService {
         String validation, applied;
         String talk="";
         try {
-            if(failure!=null) throw new AgentActionParser.InvalidAgentOutput(failure instanceof java.util.concurrent.TimeoutException
-                ||failure.getCause() instanceof java.util.concurrent.TimeoutException?"timeout":"brain error: "+failure.getClass().getSimpleName());
+            if(failure!=null) throw new AgentActionParser.InvalidAgentOutput(failureReason(failure));
             var proposal=parser.parse(reply,AgentActionParser.TURN_ACTIONS);
             LiarsDiceGame.Action action=proposal.action().equals("CALL_BLUFF")?new LiarsDiceGame.CallBluff()
                 :new LiarsDiceGame.Bid(proposal.bid().quantity(),proposal.bid().face());
@@ -838,6 +837,13 @@ public class RoomService {
     private static String opening(String text) {
         var words=text.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]"," ").trim().split("\\s+");
         return String.join(" ",Arrays.copyOf(words,Math.min(3,words.length)));
+    }
+    /** Why a brain call failed, e.g. "timeout" or "LLM HTTP 429". Provider messages never contain the API key. */
+    static String failureReason(Throwable failure) {
+        Throwable cause=failure instanceof java.util.concurrent.CompletionException&&failure.getCause()!=null?failure.getCause():failure;
+        if(cause instanceof java.util.concurrent.TimeoutException) return "timeout";
+        String message=cause.getMessage()==null?"":": "+cause.getMessage();
+        return cause.getClass().getSimpleName()+(message.length()>120?message.substring(0,120):message);
     }
     private void playerChat(Peer peer,JsonNode payload) {
         Room room=room(peer);
@@ -871,7 +877,7 @@ public class RoomService {
         room.replying.remove(agentId);
         if(!matchId.equals(room.matchId)) return;
         try {
-            if(failure!=null) throw new AgentActionParser.InvalidAgentOutput("no reply: "+failure.getClass().getSimpleName());
+            if(failure!=null) throw new AgentActionParser.InvalidAgentOutput("no reply: "+failureReason(failure));
             var proposal=parser.parse(reply,AgentActionParser.CHAT_ACTIONS);
             postChat(room,agentId,seat(room,agentId).name,true,proposal.message());
             logAgent(context,reply,"VALID","CHAT");
