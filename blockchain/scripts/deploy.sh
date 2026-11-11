@@ -13,7 +13,8 @@
 #
 # Re-running is safe: every step checks the chain first and skips finished work.
 # Creates sub-accounts token., casino., settler., don., foxy. under the root account.
-# The root account is the TRASH owner (whole supply) and the casino owner.
+# The root account owns both contracts. The whole initial TRASH supply is moved
+# into the casino's house bankroll; players get test TRASH from the token faucet.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -34,9 +35,13 @@ AGENTS=("don.$ROOT" "foxy.$ROOT")
 # Whole-TRASH amounts; converted to yoctoTRASH (24 decimals) with string padding,
 # so no floating point is ever involved.
 SUPPLY_TRASH="${SUPPLY_TRASH:-1000000000}"
-# agent: per-transfer limit, daily limit, max buy-in, initial funding
-DON_LIMITS=(5 20 10 200)
-FOXY_LIMITS=(3 10 10 100)
+FAUCET_TRASH="${FAUCET_TRASH:-100}"
+FAUCET_COOLDOWN_SECONDS="${FAUCET_COOLDOWN_SECONDS:-60}"
+HOUSE_PER_GAME_TRASH="${HOUSE_PER_GAME_TRASH:-250}"
+HOUSE_PER_DAY_TRASH="${HOUSE_PER_DAY_TRASH:-5000}"
+# agent tip limits: per transfer, per day
+DON_LIMITS=(5 20)
+FOXY_LIMITS=(3 10)
 
 trash() { printf '%s000000000000000000000000' "$1"; }
 
@@ -108,7 +113,7 @@ if [[ -n "$(view "$TOKEN" ft_metadata '{}')" ]]; then
   echo "already deployed"
 else
   near contract deploy "$TOKEN" use-file "$WASM_DIR/trash_token.wasm" \
-    with-init-call new json-args "{\"owner_id\":\"$ROOT\",\"total_supply\":\"$(trash "$SUPPLY_TRASH")\"}" \
+    with-init-call new json-args "{\"owner_id\":\"$ROOT\",\"total_supply\":\"$(trash "$SUPPLY_TRASH")\",\"faucet_amount\":\"$(trash "$FAUCET_TRASH")\",\"faucet_cooldown_seconds\":$FAUCET_COOLDOWN_SECONDS}" \
     prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
     network-config "$NETWORK" sign-with-legacy-keychain send
 fi
@@ -118,7 +123,7 @@ if [[ -n "$(view "$CASINO" get_config '{}')" ]]; then
   echo "already deployed"
 else
   near contract deploy "$CASINO" use-file "$WASM_DIR/trash_casino.wasm" \
-    with-init-call new json-args "{\"owner_id\":\"$ROOT\",\"token_id\":\"$TOKEN\",\"settler_id\":\"$SETTLER\"}" \
+    with-init-call new json-args "{\"owner_id\":\"$ROOT\",\"token_id\":\"$TOKEN\",\"settler_id\":\"$SETTLER\",\"max_house_stake_per_game\":\"$(trash "$HOUSE_PER_GAME_TRASH")\",\"daily_house_stake_limit\":\"$(trash "$HOUSE_PER_DAY_TRASH")\"}" \
     prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
     network-config "$NETWORK" sign-with-legacy-keychain send
 fi
@@ -130,29 +135,29 @@ else
   echo "already registered"
 fi
 
-register_agent() { # <agent> <per-transfer> <daily> <max buy-in> <funding>
+log "Move the whole supply into the casino house bankroll"
+OWNER_TRASH="$(view "$TOKEN" ft_balance_of "{\"account_id\":\"$ROOT\"}" | jq -r '.')"
+if [[ "$OWNER_TRASH" != "0" && -n "$OWNER_TRASH" ]]; then
+  call "$ROOT" "$TOKEN" ft_transfer_call \
+    "{\"receiver_id\":\"$CASINO\",\"amount\":\"$OWNER_TRASH\",\"msg\":\"{\\\"type\\\":\\\"fund_house\\\"}\"}" '1 yoctoNEAR'
+else
+  echo "already moved"
+fi
+
+register_agent() { # <agent> <per-transfer> <daily>
   local agent="$1"
   if [[ "$(view "$CASINO" get_agent_limits "{\"agent_id\":\"$agent\"}")" == "null" ]]; then
     call "$ROOT" "$CASINO" register_agent \
-      "{\"agent_id\":\"$agent\",\"per_transfer_limit\":\"$(trash "$2")\",\"daily_limit\":\"$(trash "$3")\",\"max_buy_in\":\"$(trash "$4")\"}" \
+      "{\"agent_id\":\"$agent\",\"per_transfer_limit\":\"$(trash "$2")\",\"daily_limit\":\"$(trash "$3")\"}" \
       '1 yoctoNEAR'
   else
     echo "registered: $agent"
   fi
-  local balance
-  balance="$(view "$CASINO" get_agent_limits "{\"agent_id\":\"$agent\"}" | jq -r '.balance')"
-  if [[ "$balance" == "0" ]]; then
-    local msg="{\\\"type\\\":\\\"fund_agent\\\",\\\"agent_id\\\":\\\"$agent\\\"}"
-    call "$ROOT" "$TOKEN" ft_transfer_call \
-      "{\"receiver_id\":\"$CASINO\",\"amount\":\"$(trash "$5")\",\"msg\":\"$msg\"}" '1 yoctoNEAR'
-  else
-    echo "funded: $agent ($balance yoctoTRASH)"
-  fi
-  # The backend's key for this agent: agent_pay / agent_join_game on the casino only.
+  # The backend's key for this agent: agent_pay on the casino only.
   if [[ "$(function_call_key_count "$agent" "$CASINO")" == "0" ]]; then
     near account add-key "$agent" grant-function-call-access \
       --allowance '0.25 NEAR' --contract-account-id "$CASINO" \
-      --function-names 'agent_pay, agent_join_game' \
+      --function-names 'agent_pay' \
       autogenerate-new-keypair save-to-legacy-keychain \
       network-config "$NETWORK" sign-with-legacy-keychain send
   else
@@ -188,6 +193,8 @@ cat "$OUT"
 echo
 echo "TRASH supply:   $(view "$TOKEN" ft_total_supply '{}')"
 echo "Casino config:  $(view "$CASINO" get_config '{}')"
+echo "Casino house:   $(view "$CASINO" get_house '{}')"
+echo "Faucet:         $(view "$TOKEN" get_faucet "{\"account_id\":\"$ROOT\"}")"
 for agent in "${AGENTS[@]}"; do
   echo "Agent $agent: $(view "$CASINO" get_agent_limits "{\"agent_id\":\"$agent\"}")"
 done

@@ -1,90 +1,76 @@
-# Architecture — milestone 1
+# Architecture
 
-Current free-play implementation supersedes the transport-only status below:
-see [free-play multiplayer](free-play.md). The user's updated order puts working
-rooms and gameplay before the wallet/chain slice. No monetary boundary has been
-replaced by guest authentication.
-
-The repository initially contained only `AGENTS.md` and `docs/SPECIFICATION.md`.
-There was no existing code, build, database, or deployment to preserve. The
-explicit rules and P0 scope in `AGENTS.md` take precedence over the older, broader
-specification. Directory names follow `AGENTS.md`: `web-client`, `backend-java`,
-and `shared-schemas`. The repository root itself is the monorepo; no nested copy.
+NEAR Testnet only. TRASH has no real-world value. The explicit rules and P0 scope
+in [AGENTS.md](../AGENTS.md) take precedence over the older
+[specification](SPECIFICATION.md). Gameplay details: [free play](free-play.md).
+Economy and its verification: [economy milestone](economy.md).
 
 ```mermaid
 flowchart LR
-  Browser[React DOM UI + R3F preview] -->|GET /api/health| Vite[Vite dev proxy]
-  Browser <-->|/ws transport only| Vite
-  Vite <-->|HTTP + WebSocket| Java[Java 21 / Spring Boot]
+  Browser[React DOM UI + R3F] -->|/api, /ws via Vite proxy| Java[Java 21 / Spring Boot]
+  Browser -->|near-connect: sign NEP-413 login,<br/>faucet, deposit, join_game, withdraw| Wallet[User's NEAR wallet]
+  Wallet --> Chain[(NEAR Testnet)]
+  Java -->|HTTP + bearer token| Bridge[near-bridge / TypeScript]
+  Bridge -->|restricted keys, FINAL outcomes| Chain
+  Chain --- Token[trash-token<br/>NEP-141 + faucet]
+  Chain --- Casino[trash-casino<br/>house, balances, escrow, NPC limits]
   Schemas[shared-schemas/api.schema.json] -->|generated TypeScript| Browser
-  Schemas -->|packaged JSON + runtime validation| Java
-  Java -. future room service .-> Engine[Pure Java Liar's Dice engine]
-  Java -. postgres profile .-> Postgres[(PostgreSQL)]
-  Java -. future confirmed operations .-> Bridge[near-bridge / reserved]
-  Bridge -. future testnet only .-> Contracts[trash-token + trash-casino / sandbox-tested, not deployed]
+  Schemas -->|runtime validation| Java
 ```
 
-Solid connections are implemented. Dashed connections are reserved or optional.
-The engine is tested but deliberately not exposed as an unauthenticated gameplay
-API. Transport connectivity does not prove wallet ownership or chain health.
+## Who signs what
 
-## Responsibilities
-
-| Directory | Current implementation | Next boundary |
+| Signer | Key | Transactions |
 |---|---|---|
-| `web-client` | React 19, TypeScript, Vite, R3F, drei, Zustand, Tailwind; procedural table/cups/animals; avatar choice; API + WS status | Server-issued views and room controls after wallet signing spike |
-| `backend-java/api` | `GET /api/health` | Authenticated REST features |
-| `backend-java/websocket` | `/ws`, schema validation, `CONNECTED`, `PING`, `PONG`, `ERROR` | Authenticated identity binding and per-room dispatch |
-| `backend-java/games` | Pure Java rules, SecureRandom, private views, reveal, fallback | Room lifecycle, scheduled timeouts, NPC service |
-| `shared-schemas` | Draft 2020-12 contracts, generated TS, AJV tests | Versioned schema changes alongside consumers |
-| `near-bridge` | Workspace reservation only | Final execution verification, no LLM key access |
-| `blockchain` | `trash-token` (NEP-141 reference + burn) and `trash-casino` (escrow, settlement, refunds, `agent_pay` limits); unit + NEAR Sandbox tests; testnet deploy script, not yet run. See [blockchain/README.md](../blockchain/README.md) | Testnet deployment, then bridge integration |
+| Player | their own wallet | `token.faucet`, `token.ft_transfer_call` (deposit), `casino.join_game`, `casino.withdraw`, `casino.pay_offer`, `casino.claim_refund` |
+| Settler (bridge) | function-call key on the casino | `create_game`, `settle_game`, `cancel_game` |
+| NPC (bridge) | function-call key on the casino | `agent_pay` |
+| Team (owner) | full-access key, never on a server | deploy, limits, settler change |
 
-Other Java packages (`auth`, `players`, `rooms`, `agents`, `negotiations`, `economy`,
-`shop`, `blockchain`, `persistence`) will be added as working slices, rather than
-empty service abstractions. Treasury and shop are P1, not started.
+The browser holds no keys and decides no outcomes. The LLM (not built yet) will
+never receive any key; it can only propose actions that Java validates.
+
+## Paid Liar's Dice flow
+
+1. **Login (NEP-413).** `POST /api/auth/nonce` returns a single-use 32-byte nonce.
+   The wallet signs `{message, recipient, nonce}`. `POST /api/auth/verify` asks the
+   bridge to check the signature and that the key is a FullAccess key of that
+   account. Java then issues a session token. A bare account ID proves nothing.
+2. **Money in.** The player claims test TRASH from the token faucet into their
+   wallet and deposits it into the casino (`ft_transfer_call`, `{"type":"deposit"}`).
+3. **Room.** `ROOM_CREATE {paid: true, sessionToken}`. Every human seat in a paid
+   room is bound to a verified account; one wallet, one seat. NPC seats use the
+   configured NPC accounts.
+4. **Funding (phase `FUNDING`).** On start, Java asks the bridge to
+   `create_game`. NPCs are seated with house money by the contract. Each human
+   signs `join_game` in their wallet. Java polls `get_game_status` and starts the
+   match only when the chain shows every seat paid. If someone leaves or the
+   funding window (3 min) passes, Java cancels the on-chain game and every buy-in
+   goes back to its casino balance.
+5. **Settlement.** At game over Java asks the bridge to `settle_game` with the
+   whole pot to the winner. `GAME_RESULT.settlement` and `ROOM_STATE.economy`
+   show `PENDING`, then `CONFIRMED` with the transaction hash, or `FAILED`.
+6. **Money out.** `withdraw` sends the casino balance back to the wallet.
+
+If the server disappears, any player can call `claim_refund` after the on-chain
+deadline (2 hours) and everyone gets their buy-in back.
 
 ## Authority and privacy
 
-- The browser holds only the selected preview avatar and connection status. No
-  trusted dice, balances, outcomes, wallet claims, or secret material live there.
-- The game engine rolls with `SecureRandom`. Bids must increase, fit total dice,
-  and come from the current participant. Ones are not wild. The loser starts the
-  next round, or the next active seat starts after elimination.
-- A player view contains immutable own dice plus public counts and turn/bid
-  metadata. A bluff resolution returns an explicit immutable round reveal.
-  The future room service must bind `viewFor` and `apply` to verified server-side
-  session identities; it must never take an actor ID as proof from the client.
-- Human and NPC proposals use the same engine action interface. Its deterministic
-  fallback bids `(1,1)` on an empty round and calls bluff otherwise. No LLM call or
-  timeout scheduler exists yet.
-- The WebSocket accepts only client message types, rejects unknown fields,
-  duplicate JSON keys, trailing JSON, and malformed payloads, and limits messages
-  to 4096 bytes. Browser origins are restricted. Origin checks are not auth.
-- Monetary amounts are base-unit decimal strings in JSON. Future services must
-  use `BigInteger`/`bigint`/`u128`, enforce bounds and budgets, and confirm final
-  execution before payment or settlement succeeds.
-- No blockchain/LLM mocks exist. Any future mock must be labelled `TEMPORARY MOCK`.
-  TRASH has no real-world value. All future integration is NEAR Testnet only.
+- The server is authoritative for dice and match results and is **trusted** to
+  report them honestly; there is no provably fair randomness. The contract limits
+  how money moves: only to seated players, never more than the escrow, once.
+- A player view contains only their own dice plus public state.
+- Amounts are yoctoTRASH decimal strings in JSON, `BigInteger` in Java, `bigint`
+  in TypeScript, `u128` on-chain. No floating point.
+- WebSocket messages are validated against the shared schema; unknown fields,
+  duplicate keys, and trailing JSON are rejected. Origins are restricted.
+- Chain state changes in Java only after a confirmed final execution outcome.
 
 ## Runtime
 
-The default Java profile starts without a database, supporting initial rules and
-transport work. The `postgres` profile enables JPA and PostgreSQL configuration;
-there are no entities, migrations, or persistent gameplay records yet. Compose
-runs PostgreSQL and the Java service with that profile. The bridge is omitted
-until it has real behavior. Vite runs on the host and proxies `/api` and `/ws`.
-
-The Java Docker build uses the monorepo root as context so it can package the
-same schema file as the frontend. No duplicate handwritten TS message types.
-
-## Work remaining
-
-Before more wallet UI, prove wallet connection and NEP-413 signing against current
-NEAR documentation. Then implement rooms and connect this engine, add one NPC and
-chat with strict proposal validation and 5-second fallback, and sandbox-test the
-contracts before testnet deployment. Buy-in, confirmed settlement, one paid info
-deal, and a contract-limited tip remain required P0 slices.
-
-The server is trusted to roll dice and report outcomes. There is no commitment
-scheme and no trustless or provably fair randomness claim.
+- Java runs without a database by default; rooms, sessions, and nonces are in memory.
+- The bridge runs as a separate Node process (or the Compose `chain` profile).
+  Without bridge configuration, `/api/chain` reports `enabled: false` and only
+  free play is offered. Nothing is simulated.
+- Compose runs PostgreSQL and Java; the bridge service starts with `--profile chain`.

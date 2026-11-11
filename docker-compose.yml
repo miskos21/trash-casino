@@ -26,11 +26,39 @@ services:
       DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-raccoon_royale}
       POSTGRES_USER: ${POSTGRES_USER:-raccoon}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Copy .env.example to .env and set a local password}
+      # NEAR Testnet only. Empty values keep paid play disabled.
+      NEAR_NETWORK: ${NEAR_NETWORK:-testnet}
+      NEAR_BRIDGE_URL: http://bridge:8090
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:-}
+      TRASH_TOKEN_CONTRACT_ID: ${TRASH_TOKEN_CONTRACT_ID:-}
+      TRASH_CASINO_CONTRACT_ID: ${TRASH_CASINO_CONTRACT_ID:-}
+      NEAR_EXPLORER_URL: ${NEAR_EXPLORER_URL:-https://testnet.nearblocks.io}
+      LIARS_DICE_BUY_IN_TRASH: ${LIARS_DICE_BUY_IN_TRASH:-10}
+      NEAR_AGENT_DON_ACCOUNT_ID: ${NEAR_AGENT_DON_ACCOUNT_ID:-}
+      NEAR_AGENT_FOXY_ACCOUNT_ID: ${NEAR_AGENT_FOXY_ACCOUNT_ID:-}
     ports:
       - "127.0.0.1:${SERVER_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
-# The bridge is reserved until real testnet operations exist; no placeholder service.
+  # Signs with restricted testnet keys only. Started only with `--profile chain`
+  # once the contracts are deployed and the keys are in .env.
+  bridge:
+    profiles: ["chain"]
+    build:
+      context: .
+      dockerfile: near-bridge/Dockerfile
+    environment:
+      NEAR_NETWORK: ${NEAR_NETWORK:-testnet}
+      NEAR_RPC_URL: ${NEAR_RPC_URL:-https://test.rpc.fastnear.com}
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?Set BRIDGE_TOKEN in .env}
+      TRASH_TOKEN_CONTRACT_ID: ${TRASH_TOKEN_CONTRACT_ID:?Set TRASH_TOKEN_CONTRACT_ID in .env}
+      TRASH_CASINO_CONTRACT_ID: ${TRASH_CASINO_CONTRACT_ID:?Set TRASH_CASINO_CONTRACT_ID in .env}
+      NEAR_SETTLEMENT_ACCOUNT_ID: ${NEAR_SETTLEMENT_ACCOUNT_ID:?Set NEAR_SETTLEMENT_ACCOUNT_ID in .env}
+      NEAR_SETTLEMENT_PRIVATE_KEY: ${NEAR_SETTLEMENT_PRIVATE_KEY:?Set NEAR_SETTLEMENT_PRIVATE_KEY in .env}
+      NEAR_AGENT_DON_ACCOUNT_ID: ${NEAR_AGENT_DON_ACCOUNT_ID:-}
+      NEAR_AGENT_DON_PRIVATE_KEY: ${NEAR_AGENT_DON_PRIVATE_KEY:-}
+      NEAR_AGENT_FOXY_ACCOUNT_ID: ${NEAR_AGENT_FOXY_ACCOUNT_ID:-}
+      NEAR_AGENT_FOXY_PRIVATE_KEY: ${NEAR_AGENT_FOXY_PRIVATE_KEY:-}
 volumes:
   postgres-data:

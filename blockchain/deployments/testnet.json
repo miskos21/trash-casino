@@ -1,0 +1,12 @@
+{
+  "network": "testnet",
+  "token": "token.trashnino-demo.testnet",
+  "casino": "casino.trashnino-demo.testnet",
+  "owner": "trashnino-demo.testnet",
+  "settler": "settler.trashnino-demo.testnet",
+  "agents": {
+    "don": "don.trashnino-demo.testnet",
+    "foxy": "foxy.trashnino-demo.testnet"
+  },
+  "note": "Public account IDs only. Keys stay in ~/.near-credentials. TRASH has no real-world value."
+}

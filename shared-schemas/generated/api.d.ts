@@ -1,7 +1,7 @@
 /* Generated from shared-schemas/api.schema.json. Run npm run schemas:generate. */
 
 /**
- * Version 1 free-play rooms, Liar's Dice, and Blackjack contracts. No wallet or chain operations.
+ * Version 1 rooms, Liar's Dice, and Blackjack contracts, plus NEP-413 wallet sessions and paid Liar's Dice rooms on NEAR Testnet. TRASH has no real-world value.
  */
 export type ApiContract =
   | Identifier
@@ -65,7 +65,17 @@ export type ApiContract =
   | BLACKJACK_STATE
   | BlackjackTally
   | BlackjackShoe
-  | ROOM_LEFT;
+  | ROOM_LEFT
+  | NearAccountId
+  | SessionToken
+  | ChainGameId
+  | TxHash
+  | RoomPayout
+  | RoomEconomy
+  | ChainConfigResponse
+  | AuthNonceResponse
+  | AuthVerifyRequest
+  | AuthSessionResponse;
 export type Identifier = string;
 /**
  * Exact base-unit integer string. Services must also enforce u128 and budget limits.
@@ -83,6 +93,14 @@ export type AgreementState =
   | "REFUNDED"
   | "REJECTED"
   | "EXPIRED";
+/**
+ * NEAR account ID (named or implicit). Shape only; ownership is proven by a NEP-413 session.
+ */
+export type NearAccountId = string;
+/**
+ * Server-issued wallet session from POST /api/auth/verify. Never a wallet key.
+ */
+export type SessionToken = string;
 export type ResumeToken = string;
 export type ClientMessage =
   | PING
@@ -114,6 +132,8 @@ export type ServerMessage =
   | BLACKJACK_STATE
   | ROOM_LEFT;
 export type GameType = "LIARS_DICE" | "BLACKJACK";
+export type ChainGameId = string;
+export type TxHash = string;
 
 export interface Bid {
   quantity: number;
@@ -240,12 +260,19 @@ export interface ProfileResponse {
   displayName: string;
   walletAccountId: string;
 }
+/**
+ * TRASH in the player's wallet (token) and in their casino balance. Read from the chain.
+ */
 export interface BalanceResponse {
-  accountId: string;
-  amount: TokenAmount;
+  accountId: NearAccountId;
+  wallet: TokenAmount;
+  casino: TokenAmount;
   decimals: 24;
   symbol: "TRASH";
-  network: "testnet";
+  /**
+   * sandbox only for a local rehearsal; never mainnet
+   */
+  network: "testnet" | "sandbox";
 }
 export interface Transaction {
   transactionHash: string;
@@ -308,6 +335,11 @@ export interface ROOM_CREATE {
      * Rule-based NPC seats: 1 adds Don Raccoone, 2 also adds Foxy. Defaults to 1.
      */
     agents?: number;
+    /**
+     * Paid Liar's Dice room: every human needs a wallet session and pays the fixed TRASH buy-in from their casino balance. Defaults to false.
+     */
+    paid?: boolean;
+    sessionToken?: SessionToken;
   };
 }
 export interface ROOM_JOIN {
@@ -318,6 +350,7 @@ export interface ROOM_JOIN {
     roomCode: string;
     displayName: string;
     avatar: Avatar;
+    sessionToken?: SessionToken;
   };
 }
 export interface ROOM_READY {
@@ -498,7 +531,7 @@ export interface ROOM_STATE {
 export interface RoomState {
   roomId: Identifier;
   roomCode: string;
-  phase: "LOBBY" | "IN_PROGRESS" | "FINISHED";
+  phase: "LOBBY" | "FUNDING" | "IN_PROGRESS" | "FINISHED";
   hostId: Identifier;
   youId: Identifier;
   /**
@@ -508,6 +541,7 @@ export interface RoomState {
   participants:
     [RoomSeat] | [RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat] | [RoomSeat, RoomSeat, RoomSeat, RoomSeat];
   game: GameType;
+  economy?: RoomEconomy | null;
 }
 export interface RoomSeat {
   playerId: Identifier;
@@ -517,6 +551,28 @@ export interface RoomSeat {
   ready: boolean;
   connected: boolean;
   presence: "ONLINE" | "DISCONNECTED" | "LEFT";
+  accountId?: NearAccountId | null;
+}
+/**
+ * Paid room status. The chain is the source of truth; these values come from confirmed final execution outcomes.
+ */
+export interface RoomEconomy {
+  mode: "PAID";
+  buyIn: TokenAmount;
+  casinoId: NearAccountId;
+  gameId: ChainGameId | null;
+  funding: "NOT_STARTED" | "CREATING" | "AWAITING_PAYMENTS" | "FUNDED" | "CANCELLING" | "CANCELLED" | "FAILED";
+  fundingDeadlineEpochMillis: number;
+  paidPlayerIds: Identifier[];
+  settlement: "NOT_STARTED" | "PENDING" | "CONFIRMED" | "FAILED";
+  settlementTxHash: TxHash | null;
+  payouts: RoomPayout[];
+  message: string | null;
+}
+export interface RoomPayout {
+  playerId: Identifier;
+  accountId: NearAccountId;
+  amount: TokenAmount;
 }
 export interface ROOM_SESSION {
   protocolVersion: 1;
@@ -662,4 +718,43 @@ export interface ROOM_LEFT {
   payload: {
     roomId: Identifier;
   };
+}
+export interface ChainConfigResponse {
+  enabled: boolean;
+  /**
+   * sandbox only for a local rehearsal; never mainnet
+   */
+  network: "testnet" | "sandbox";
+  tokenId: NearAccountId | null;
+  casinoId: NearAccountId | null;
+  explorerUrl: string;
+  buyIn: TokenAmount;
+  decimals: 24;
+  symbol: "TRASH";
+}
+/**
+ * NEP-413 challenge. Sign exactly message, recipient, and the 32-byte nonce.
+ */
+export interface AuthNonceResponse {
+  message: string;
+  recipient: string;
+  /**
+   * Base64 of 32 bytes
+   */
+  nonce: string;
+  expiresAtEpochMillis: number;
+}
+export interface AuthVerifyRequest {
+  accountId: NearAccountId;
+  publicKey: string;
+  /**
+   * Base64 signature from the wallet
+   */
+  signature: string;
+  nonce: string;
+}
+export interface AuthSessionResponse {
+  accountId: NearAccountId;
+  sessionToken: SessionToken;
+  expiresAtEpochMillis: number;
 }

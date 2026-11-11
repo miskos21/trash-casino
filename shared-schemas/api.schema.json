@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raccoon-royale.invalid/schemas/api.v1.json",
   "title": "ApiContract",
-  "description": "Version 1 free-play rooms, Liar's Dice, and Blackjack contracts. No wallet or chain operations.",
+  "description": "Version 1 rooms, Liar's Dice, and Blackjack contracts, plus NEP-413 wallet sessions and paid Liar's Dice rooms on NEAR Testnet. TRASH has no real-world value.",
   "oneOf": [
     {
       "$ref": "#/$defs/ClientMessage"
@@ -443,13 +443,15 @@
     "BalanceResponse": {
       "type": "object",
       "additionalProperties": false,
+      "description": "TRASH in the player's wallet (token) and in their casino balance. Read from the chain.",
       "properties": {
         "accountId": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 64
+          "$ref": "#/$defs/NearAccountId"
         },
-        "amount": {
+        "wallet": {
+          "$ref": "#/$defs/TokenAmount"
+        },
+        "casino": {
           "$ref": "#/$defs/TokenAmount"
         },
         "decimals": {
@@ -459,12 +461,18 @@
           "const": "TRASH"
         },
         "network": {
-          "const": "testnet"
+          "type": "string",
+          "enum": [
+            "testnet",
+            "sandbox"
+          ],
+          "description": "sandbox only for a local rehearsal; never mainnet"
         }
       },
       "required": [
         "accountId",
-        "amount",
+        "wallet",
+        "casino",
         "decimals",
         "symbol",
         "network"
@@ -717,6 +725,13 @@
               "minimum": 0,
               "maximum": 2,
               "description": "Rule-based NPC seats: 1 adds Don Raccoone, 2 also adds Foxy. Defaults to 1."
+            },
+            "paid": {
+              "type": "boolean",
+              "description": "Paid Liar's Dice room: every human needs a wallet session and pays the fixed TRASH buy-in from their casino balance. Defaults to false."
+            },
+            "sessionToken": {
+              "$ref": "#/$defs/SessionToken"
             }
           },
           "required": [
@@ -767,6 +782,9 @@
             },
             "avatar": {
               "$ref": "#/$defs/Avatar"
+            },
+            "sessionToken": {
+              "$ref": "#/$defs/SessionToken"
             }
           },
           "required": [
@@ -1596,6 +1614,16 @@
             "DISCONNECTED",
             "LEFT"
           ]
+        },
+        "accountId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NearAccountId"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -1622,6 +1650,7 @@
         "phase": {
           "enum": [
             "LOBBY",
+            "FUNDING",
             "IN_PROGRESS",
             "FINISHED"
           ]
@@ -1642,6 +1671,16 @@
         },
         "game": {
           "$ref": "#/$defs/GameType"
+        },
+        "economy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoomEconomy"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -2346,6 +2385,285 @@
         "type",
         "requestId",
         "payload"
+      ]
+    },
+    "NearAccountId": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^(([a-z\\d]+[-_])*[a-z\\d]+\\.)*([a-z\\d]+[-_])*[a-z\\d]+$",
+      "description": "NEAR account ID (named or implicit). Shape only; ownership is proven by a NEP-413 session."
+    },
+    "SessionToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "Server-issued wallet session from POST /api/auth/verify. Never a wallet key."
+    },
+    "ChainGameId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+    },
+    "TxHash": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,64}$"
+    },
+    "RoomPayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "playerId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "accountId": {
+          "$ref": "#/$defs/NearAccountId"
+        },
+        "amount": {
+          "$ref": "#/$defs/TokenAmount"
+        }
+      },
+      "required": [
+        "playerId",
+        "accountId",
+        "amount"
+      ]
+    },
+    "RoomEconomy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Paid room status. The chain is the source of truth; these values come from confirmed final execution outcomes.",
+      "properties": {
+        "mode": {
+          "const": "PAID"
+        },
+        "buyIn": {
+          "$ref": "#/$defs/TokenAmount"
+        },
+        "casinoId": {
+          "$ref": "#/$defs/NearAccountId"
+        },
+        "gameId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChainGameId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "funding": {
+          "type": "string",
+          "enum": [
+            "NOT_STARTED",
+            "CREATING",
+            "AWAITING_PAYMENTS",
+            "FUNDED",
+            "CANCELLING",
+            "CANCELLED",
+            "FAILED"
+          ]
+        },
+        "fundingDeadlineEpochMillis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "paidPlayerIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "settlement": {
+          "type": "string",
+          "enum": [
+            "NOT_STARTED",
+            "PENDING",
+            "CONFIRMED",
+            "FAILED"
+          ]
+        },
+        "settlementTxHash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TxHash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payouts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoomPayout"
+          }
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "buyIn",
+        "casinoId",
+        "gameId",
+        "funding",
+        "fundingDeadlineEpochMillis",
+        "paidPlayerIds",
+        "settlement",
+        "settlementTxHash",
+        "payouts",
+        "message"
+      ]
+    },
+    "ChainConfigResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "testnet",
+            "sandbox"
+          ],
+          "description": "sandbox only for a local rehearsal; never mainnet"
+        },
+        "tokenId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NearAccountId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "casinoId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NearAccountId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "explorerUrl": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "buyIn": {
+          "$ref": "#/$defs/TokenAmount"
+        },
+        "decimals": {
+          "const": 24
+        },
+        "symbol": {
+          "const": "TRASH"
+        }
+      },
+      "required": [
+        "enabled",
+        "network",
+        "tokenId",
+        "casinoId",
+        "explorerUrl",
+        "buyIn",
+        "decimals",
+        "symbol"
+      ]
+    },
+    "AuthNonceResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "NEP-413 challenge. Sign exactly message, recipient, and the 32-byte nonce.",
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "recipient": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{43}=$",
+          "description": "Base64 of 32 bytes"
+        },
+        "expiresAtEpochMillis": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "message",
+        "recipient",
+        "nonce",
+        "expiresAtEpochMillis"
+      ]
+    },
+    "AuthVerifyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "$ref": "#/$defs/NearAccountId"
+        },
+        "publicKey": {
+          "type": "string",
+          "pattern": "^ed25519:[1-9A-HJ-NP-Za-km-z]{32,44}$"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Base64 signature from the wallet"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{43}=$"
+        }
+      },
+      "required": [
+        "accountId",
+        "publicKey",
+        "signature",
+        "nonce"
+      ]
+    },
+    "AuthSessionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "$ref": "#/$defs/NearAccountId"
+        },
+        "sessionToken": {
+          "$ref": "#/$defs/SessionToken"
+        },
+        "expiresAtEpochMillis": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "accountId",
+        "sessionToken",
+        "expiresAtEpochMillis"
       ]
     }
   }

@@ -404,6 +404,12 @@ Implement a single paid information service fully before adding more.
 
 # 10. AI wallet autonomy
 
+> **Decision 2026-11-11:** NPCs belong to the casino. Each NPC still has its own
+> NEAR account and server-side restricted key, but no TRASH of its own: it plays and
+> tips with house money inside `trash-casino`, within contract-enforced limits.
+> Sections 10–13 are kept as the original brief; [AGENTS.md](../AGENTS.md) and
+> [blockchain/README.md](../blockchain/README.md) describe the current model.
+
 Each AI agent should have a separate NEAR Testnet wallet.
 
 The wallet must be controlled by a secure server-side signing service.
@@ -459,6 +465,11 @@ Never use floating-point arithmetic for blockchain accounting.
 ---
 
 # 12. TRASH ↔ NEAR exchange
+
+> **Decision 2026-11-11:** postponed (P2). The casino owns the whole initial supply;
+> on testnet a rate-limited token faucet gives players free test TRASH instead of
+> buying it. Players deposit TRASH into the casino and withdraw it back to their
+> wallet. No separate treasury contract and no burning.
 
 Players must be able to exchange test NEAR for TRASH and redeem TRASH back for test NEAR.
 

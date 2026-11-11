@@ -35,12 +35,26 @@ Implemented locally:
   Blackjack uses a larger table with a separate four-column area for each hand;
   every card keeps the same physical size as longer hands wrap into more rows.
 
-Wallet signing, LLM decisions/chat, negotiations, starter grants, buy-in, and
-settlement are not implemented in the game. The `trash-token` and `trash-casino`
-contracts exist and pass unit and NEAR Sandbox tests ([blockchain/](blockchain/README.md)),
-but they are **not deployed to testnet and not connected** to the backend. The bridge
-directory is a reservation; no contract IDs exist. No blockchain mocks or simulated
-balances exist.
+### Playing for TRASH (NEAR Testnet)
+
+TRASH has no real-world value. Economic model and contracts: [blockchain/README.md](blockchain/README.md).
+Flow and trust boundaries: [architecture](docs/architecture.md). Verification: [economy milestone](docs/economy.md).
+
+- The casino contract owns the whole initial supply as its house bankroll. NPCs
+  belong to the casino and play and tip with house money.
+- A player connects a NEAR wallet (near-connect) and signs a NEP-413 login message.
+- **Get free test TRASH** mints 100 TRASH to the wallet (once a minute per account).
+- **Deposit** moves TRASH into the casino balance; **Withdraw** sends it back.
+- A paid Liar's Dice room (**10 TRASH buy-in**) opens an on-chain escrow. Each human
+  pays from their casino balance; the match starts only when the chain shows every
+  seat paid. The winner's pot is settled on-chain and shown with its transaction.
+
+Implemented and tested end to end on a local NEAR Sandbox (contracts, bridge,
+backend, and a headless player). **Not yet deployed to testnet, so there are no
+contract IDs, and the browser wallet flow has not been tried with a real wallet.**
+Without bridge configuration the server offers free play only; nothing is simulated.
+LLM decisions/chat, negotiations, and the chat-driven tip are not implemented yet
+(the contract methods `pay_offer` and `agent_pay` and the bridge endpoint exist).
 The future offline LLM mode must be labelled `TEMPORARY MOCK` when implemented.
 The frontend's HTTP-failure unit test uses a labelled `TEMPORARY MOCK` response
 inside that test only; application status checks always use the real backend.
@@ -254,7 +268,9 @@ rules match, run `./mvnw -Dtest=LiarsDiceGameTest test` inside `backend-java`.
 This exercises legal deterministic fallback turns until one participant wins;
 it is not a browser/chain end-to-end demo. `node scripts/smoke.mjs` checks running
 transport independently. Contract tests run on Linux, macOS, or WSL2:
-`cd blockchain && ./scripts/build.sh && ./scripts/test.sh`. Bridge tests do not exist yet.
+`cd blockchain && ./scripts/build.sh && ./scripts/test.sh`. Bridge tests: `npm test -w near-bridge`.
+With backend + bridge + deployed contracts running, `node scripts/paid-smoke.mjs` plays
+the whole paid flow headlessly (see [economy milestone](docs/economy.md)).
 
 Validation results and remaining verification limits are recorded in
 [milestone 1](docs/milestone-1.md). A Three.js production chunk currently triggers
@@ -273,10 +289,10 @@ see [game view verification](docs/game-view.md).
 web-client/           React DOM UI and procedural R3F scene
 backend-java/         Spring Boot transport and pure Java dice engine
 shared-schemas/       JSON Schema source and generated TypeScript API types
-near-bridge/          reserved TypeScript workspace, no signing implementation
+near-bridge/          TypeScript service: restricted-key signing, final outcomes, NEP-413 checks
 blockchain/
-  trash-token/        TRASH: NEP-141/145 reference token + burn (not deployed)
-  trash-casino/       escrow, settlement, refunds, contract-enforced NPC limits (not deployed)
+  trash-token/        TRASH: NEP-141/145 reference token + test faucet (not deployed)
+  trash-casino/       house, balances, escrow, settlement, refunds, NPC tip limits (not deployed)
   integration-tests/  NEAR Sandbox tests for both contracts
   scripts/            build, test, and testnet deploy scripts
 docs/                architecture, specification, and milestone verification
@@ -284,12 +300,12 @@ docs/                architecture, specification, and milestone verification
 
 See [API contracts](shared-schemas/README.md) and [AGENTS.md](AGENTS.md). The
 architecture follows `AGENTS.md` where the older specification has different
-directory names or priorities. P1 treasury/shop work has not started.
+directory names or priorities. The shop has not started; buying TRASH for test
+NEAR replaces the faucet later (P2).
 
-The user-directed priority is to stabilize free-play multiplayer and the NPC
-before adding money. Next add NPC strategy and validated chat, then the wallet
-connection/NEP-413 spike, sandbox-tested contracts, bridge, verified buy-in and
-settlement, paid information, and contract-limited tips.
+Next: deploy to testnet (needs team approval), try the browser wallet flow with a
+real testnet wallet, then NPC chat with validated LLM proposals, the paid
+information deal, and the chat-driven contract-limited tip.
 
 ## Trust and security
 
@@ -298,9 +314,9 @@ and report match outcomes. This is **not trustless or provably fair randomness**
 Only a participant's own dice and public state may enter their view or LLM prompt.
 Schema shape checks do not replace identity, rule, agreement, or budget validation.
 LLMs will only propose actions; they will never receive keys or unrestricted tools.
-Testnet token amounts will use exact integers. Payment submission will never count
-as success without final execution verification. Agent limits belong in the
-casino contract, not solely in Java.
+Token amounts use exact integers (`u128`, `BigInteger`, `bigint`). A transaction
+counts only after its final execution outcome succeeds. Agent tip limits and house
+limits are enforced by the casino contract, not solely in Java.
 
 Nothing has been published, submitted, or deployed. Repository publication,
 social posts, and hackathon submission require explicit human approval.

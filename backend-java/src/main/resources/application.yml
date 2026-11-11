@@ -16,6 +16,21 @@ spring:
       fail-on-unknown-properties: true
 app:
   web-origin: ${WEB_ORIGIN:http://localhost:5173,http://127.0.0.1:5173}
+  # NEAR Testnet only. TRASH has no real-world value. Paid rooms and wallet login are
+  # disabled unless the bridge URL, bridge token, and both contract IDs are set.
+  chain:
+    network: ${NEAR_NETWORK:testnet} # testnet, or sandbox for a local rehearsal
+    bridge-url: ${NEAR_BRIDGE_URL:}
+    bridge-token: ${BRIDGE_TOKEN:}
+    token-id: ${TRASH_TOKEN_CONTRACT_ID:}
+    casino-id: ${TRASH_CASINO_CONTRACT_ID:}
+    explorer-url: ${NEAR_EXPLORER_URL:https://testnet.nearblocks.io}
+    buy-in-trash: ${LIARS_DICE_BUY_IN_TRASH:10}
+    auth-recipient: ${NEAR_AUTH_RECIPIENT:trashnino}
+    funding-timeout-ms: ${PAID_FUNDING_TIMEOUT_MS:180000}
+    agents:
+      don: ${NEAR_AGENT_DON_ACCOUNT_ID:}
+      foxy: ${NEAR_AGENT_FOXY_ACCOUNT_ID:}
 logging:
   level:
     root: INFO

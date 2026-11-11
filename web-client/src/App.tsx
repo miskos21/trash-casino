@@ -12,6 +12,9 @@ import { LeaveRoomButton } from './components/LeaveRoomButton';
 import { TablePresence } from './components/SeatPresence';
 import { ShoeDetails } from './components/ShoeDetails';
 import { GameRules } from './components/GameRules';
+import { WalletPanel } from './components/WalletPanel';
+import { FundingPanel } from './components/FundingPanel';
+import { useWallet } from './wallet/useWallet';
 
 class SceneBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -28,6 +31,7 @@ function Portrait({ animal, className = '' }: { animal: AvatarOption; className?
 export function App() {
   const { avatar, select } = useAvatarStore();
   const status = useGameConnection();
+  const wallet = useWallet();
   const [menuOpen, setMenuOpen] = useState(false);
   const [camera, setCamera] = useState<{ view: CameraView; revision: number }>({ view: 'table', revision: 0 });
   const [fullscreen, setFullscreen] = useState(false);
@@ -101,6 +105,7 @@ export function App() {
       </div>
     </header>
     <TablePresence room={status.room} />
+    <FundingPanel connection={status} wallet={wallet} />
 
     {status.room?.game === 'BLACKJACK' ? <BlackjackHud connection={status} onMenu={() => setMenuOpen(true)} />
       : <MatchHud connection={status} onMenu={() => setMenuOpen(true)} />}
@@ -138,7 +143,8 @@ export function App() {
             <Portrait animal={option} /><span>{option.name}</span><span className="selection-mark" aria-hidden="true">✓</span>
           </button>)}
         </div>
-        <RoomLobby connection={status} avatar={avatar} onStarted={() => setMenuOpen(false)} />
+        <RoomLobby connection={status} wallet={wallet} avatar={avatar} onStarted={() => setMenuOpen(false)} />
+        <WalletPanel wallet={wallet} />
         {status.room && <div className="menu-help"><GameRules game={status.room.game} /></div>}
         {status.blackjack && <ShoeDetails connection={status} />}
         <button className="secondary-button back-to-table" onClick={() => setMenuOpen(false)}>Back to table <GameIcon name="chevron" /></button>

@@ -1,12 +1,18 @@
 package com.raccoonroyale.rooms;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.raccoonroyale.auth.WalletAuthService;
+import com.raccoonroyale.chain.ChainGateway;
 import com.raccoonroyale.games.BlackjackGame;
 import com.raccoonroyale.games.LiarsDiceGame;
 import com.raccoonroyale.websocket.Protocol;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.util.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -14,19 +20,38 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
-/** Bounded in-memory free-play rooms. A guest session never proves wallet ownership. */
+/**
+ * Bounded in-memory rooms. A guest session never proves wallet ownership: paid
+ * Liar's Dice rooms require a NEP-413 wallet session for every human seat, and every
+ * money movement goes through the casino contract with a confirmed final outcome.
+ */
 @Service
 public class RoomService {
+    private static final Logger log = LoggerFactory.getLogger(RoomService.class);
+    /** On-chain game deadline: after it, any player can claim a refund if the server vanished. */
+    static final long CHAIN_GAME_TIMEOUT_SECONDS = 2 * 3600;
     private final Protocol protocol;
+    private final ChainGateway chain;
+    private final WalletAuthService wallets;
     private final SecureRandom random = new SecureRandom();
     private final Map<String, Peer> peers = new HashMap<>();
     private final Map<String, Room> rooms = new LinkedHashMap<>();
-    private final long turnMillis, npcMillis, revealMillis;
-    public RoomService(Protocol protocol,
+    private final long turnMillis, npcMillis, revealMillis, fundingMillis, pollMillis;
+    @Autowired
+    public RoomService(Protocol protocol, ChainGateway chain, WalletAuthService wallets,
         @Value("$" + "{app.game.turn-timeout-ms:30000}") long turnMillis,
         @Value("$" + "{app.game.npc-delay-ms:1100}") long npcMillis,
-        @Value("$" + "{app.game.reveal-ms:4000}") long revealMillis) {
-        this.protocol = protocol; this.turnMillis = turnMillis; this.npcMillis = npcMillis; this.revealMillis = revealMillis;
+        @Value("$" + "{app.game.reveal-ms:4000}") long revealMillis,
+        @Value("$" + "{app.chain.funding-timeout-ms:180000}") long fundingMillis,
+        @Value("$" + "{app.chain.poll-ms:2500}") long pollMillis) {
+        this.protocol = protocol; this.chain = chain; this.wallets = wallets;
+        this.turnMillis = turnMillis; this.npcMillis = npcMillis; this.revealMillis = revealMillis;
+        this.fundingMillis = fundingMillis; this.pollMillis = pollMillis;
+    }
+    /** Free-play only (chain disabled). Used by tests. */
+    public RoomService(Protocol protocol, long turnMillis, long npcMillis, long revealMillis) {
+        this(protocol, ChainGateway.disabled(), new WalletAuthService(ChainGateway.disabled(), "trashnino"),
+            turnMillis, npcMillis, revealMillis, 180_000, 2_500);
     }
     private static class Peer {
         final WebSocketSession socket;
@@ -40,6 +65,8 @@ public class RoomService {
     private static class Seat {
         final String id, name, avatar, token;
         final boolean npc;
+        /** Verified NEAR account (paid rooms only): a NEP-413 session or a configured NPC account. */
+        String accountId;
         boolean ready, abandoned;
         WebSocketSession socket;
         long disconnectedAt;
@@ -48,6 +75,16 @@ public class RoomService {
             this.npc=npc; this.socket=socket; this.ready=npc;
         }
     }
+    /** Paid-room state. Changes only after confirmed final execution outcomes. */
+    private static class Economy {
+        String gameId, funding="NOT_STARTED", settlement="NOT_STARTED", txHash, message;
+        long deadline, nextPoll;
+        boolean inFlight, cancelSent;
+        BigInteger pot=BigInteger.ZERO;
+        final Set<String> paid=new LinkedHashSet<>();
+        List<RoomPayout> payouts=List.of();
+        boolean active() { return funding.equals("CREATING")||funding.equals("AWAITING_PAYMENTS")||funding.equals("CANCELLING"); }
+    }
     private static class Room {
         final String id=UUID.randomUUID().toString(), code, gameType;
         final List<Seat> seats=new ArrayList<>();
@@ -55,6 +92,7 @@ public class RoomService {
         String hostId, matchId;
         LiarsDiceGame game;
         BlackjackGame blackjack;
+        Economy economy; // null for free rooms
         Map<String,Seat> dealt=Map.of(); // Hands outlive seats that leave after the hand ends.
         LiarsDiceGame.RoundResult reveal;
         long revision, deadline, npcAt, resumeAt, lastActivity, eventSequence;
@@ -62,11 +100,15 @@ public class RoomService {
         LiarsDiceGame.PublicState state() { return game.viewFor(seats.getFirst().id).publicState(); }
         String phase() {
             if(blackjack!=null) return blackjack.publicState().shoeOver() ? "FINISHED" : "IN_PROGRESS";
+            if(economy!=null&&economy.active()) return "FUNDING";
             return game==null ? "LOBBY" : state().winnerId()==null ? "IN_PROGRESS" : "FINISHED";
         }
     }
-    public record RoomSeat(String playerId,String displayName,String avatar,boolean npc,boolean ready,boolean connected,String presence) {}
-    public record RoomState(String roomId,String roomCode,String game,String phase,String hostId,String youId,List<RoomSeat> participants) {}
+    public record RoomSeat(String playerId,String displayName,String avatar,boolean npc,boolean ready,boolean connected,String presence,String accountId) {}
+    public record RoomPayout(String playerId,String accountId,String amount) {}
+    public record RoomEconomy(String mode,String buyIn,String casinoId,String gameId,String funding,long fundingDeadlineEpochMillis,
+        List<String> paidPlayerIds,String settlement,String settlementTxHash,List<RoomPayout> payouts,String message) {}
+    public record RoomState(String roomId,String roomCode,String game,String phase,String hostId,String youId,List<RoomSeat> participants,RoomEconomy economy) {}
     public record Participant(String playerId,String displayName,String avatar,boolean npc,int diceCount) {}
     public record PublicGameEvent(String id,int round,String type,String actorId,LiarsDiceGame.Bid bid,
         String loserId,Integer actualCount,String cause) {}
@@ -156,11 +198,22 @@ public class RoomService {
             code=value.toString();
         } while(findCode(code)!=null);
         Room room=new Room(code,payload.has("game") ? payload.get("game").asText() : "LIARS_DICE");
-        Seat human=human(payload,peer.socket);
-        room.hostId=human.id;room.seats.add(human);
+        boolean paid=payload.path("paid").asBoolean(false);
         int agents=payload.has("agents") ? payload.get("agents").asInt() : 1;
-        if(agents>=1) room.seats.add(new Seat("don-"+UUID.randomUUID(),"Don Raccoone","RACCOON",null,true,null));
-        if(agents>=2) room.seats.add(new Seat("foxy-"+UUID.randomUUID(),"Foxy","FOX",null,true,null));
+        Seat human=human(payload,peer.socket);
+        Seat don=agents>=1?new Seat("don-"+UUID.randomUUID(),"Don Raccoone","RACCOON",null,true,null):null;
+        Seat foxy=agents>=2?new Seat("foxy-"+UUID.randomUUID(),"Foxy","FOX",null,true,null):null;
+        if(paid) {
+            require(chain.enabled(),"CHAIN_DISABLED","Paid rooms are not configured on this server. Play free instead.");
+            require(room.gameType.equals("LIARS_DICE"),"INVALID_MESSAGE","Paid rooms are Liar’s Dice only.");
+            human.accountId=walletAccount(payload);
+            if(don!=null) don.accountId=chain.agentAccount("don").orElseThrow(()->new Rejected("CHAIN_DISABLED","Don has no NEAR account on this server."));
+            if(foxy!=null) foxy.accountId=chain.agentAccount("foxy").orElseThrow(()->new Rejected("CHAIN_DISABLED","Foxy has no NEAR account on this server."));
+            room.economy=new Economy();
+        }
+        room.hostId=human.id;room.seats.add(human);
+        if(don!=null) room.seats.add(don);
+        if(foxy!=null) room.seats.add(foxy);
         rooms.put(room.id,room);attach(peer,room,human);publish(room);
     }
     private Seat human(JsonNode payload,WebSocketSession socket) {
@@ -168,14 +221,23 @@ public class RoomService {
         require(!name.isBlank(),"INVALID_MESSAGE","Enter a player name.");
         return new Seat(UUID.randomUUID().toString(),name,payload.path("avatar").asText(),token(),false,socket);
     }
+    /** The NEAR account proven by the payload's NEP-413 session. A bare account ID proves nothing. */
+    private String walletAccount(JsonNode payload) {
+        return wallets.accountFor(payload.path("sessionToken").asText(null))
+            .orElseThrow(()->new Rejected("WALLET_REQUIRED","Connect and verify your NEAR wallet to play for TRASH."));
+    }
     private Room findCode(String code) {return rooms.values().stream().filter(r->r.code.equals(code)).findFirst().orElse(null);}
     private void join(Peer peer,JsonNode payload) {
         require(peer.roomId==null,"ALREADY_IN_ROOM","Leave your current room first.");
         Room room=findCode(payload.path("roomCode").asText());
         require(room!=null,"ROOM_NOT_FOUND","Room code not found.");
-        require(room.matchId==null,"ROOM_STARTED","This room has already started.");
+        require(room.matchId==null&&room.phase().equals("LOBBY"),"ROOM_STARTED","This room has already started.");
         require(room.seats.size()<4,"ROOM_FULL","Table is full (four seats including agents).");
         Seat human=human(payload,peer.socket);
+        if(room.economy!=null) {
+            human.accountId=walletAccount(payload);
+            require(room.seats.stream().noneMatch(s->human.accountId.equals(s.accountId)),"ALREADY_IN_ROOM","This wallet already has a seat at this table.");
+        }
         room.seats.add((int)room.seats.stream().filter(s->!s.npc).count(),human); // Humans sit before agents.
         attach(peer,room,human);publish(room);
     }
@@ -214,19 +276,141 @@ public class RoomService {
     }
     private void ready(Peer peer,JsonNode payload) {
         Room room=room(peer);assertRoom(room,payload);
-        require(!room.phase().equals("IN_PROGRESS"),"ROOM_STARTED","Match already started.");
+        require(!room.phase().equals("IN_PROGRESS")&&!room.phase().equals("FUNDING"),"ROOM_STARTED","Match already started.");
         seat(room,peer.playerId).ready=payload.path("ready").asBoolean();
         room.lastActivity=System.currentTimeMillis();publish(room);
     }
     private void start(Peer peer,JsonNode payload) {
         Room room=room(peer);assertRoom(room,payload);
         require(peer.playerId.equals(room.hostId),"NOT_HOST","Only the host can start.");
-        require(!room.phase().equals("IN_PROGRESS"),"ROOM_STARTED","Match already started.");
+        require(!room.phase().equals("IN_PROGRESS")&&!room.phase().equals("FUNDING"),"ROOM_STARTED","Match already started.");
         room.seats.removeIf(s->s.abandoned);
         require(room.seats.stream().filter(s->!s.npc).allMatch(s->s.ready&&s.socket!=null&&s.socket.isOpen()),
             "NOT_READY","All human players must be connected and ready.");
         require(room.gameType.equals("BLACKJACK")||room.seats.size()>=2,"NOT_READY",
             "Liar’s Dice needs at least two players. Add an agent or invite a friend.");
+        if(room.economy!=null) beginFunding(room);
+        else beginMatch(room);
+    }
+    /**
+     * Paid rooms: open the game on-chain first. Agents are seated with house money by
+     * the contract; every human pays the buy-in with their own wallet (join_game).
+     * The match starts only after the chain shows every seat paid.
+     */
+    private void beginFunding(Room room) {
+        var e=room.economy;
+        e.gameId="ld-"+UUID.randomUUID();
+        e.funding="CREATING";e.settlement="NOT_STARTED";e.txHash=null;e.message=null;e.payouts=List.of();
+        e.paid.clear();e.inFlight=true;e.cancelSent=false;
+        e.deadline=System.currentTimeMillis()+fundingMillis;
+        e.pot=chain.buyIn().multiply(BigInteger.valueOf(room.seats.size()));
+        room.lastActivity=System.currentTimeMillis();
+        List<String> accounts=room.seats.stream().map(s->s.accountId).toList();
+        String roomId=room.id, gameId=e.gameId;
+        log.info("paid_room_funding room={} game={} players={}",room.code,gameId,accounts);
+        chain.createGame(gameId,chain.buyIn(),accounts,CHAIN_GAME_TIMEOUT_SECONDS)
+            .whenComplete((result,error)->onGameCreated(roomId,gameId,result,error));
+        publish(room);
+    }
+    private Economy currentEconomy(String roomId,String gameId) {
+        Room room=rooms.get(roomId);
+        return room==null||room.economy==null||!gameId.equals(room.economy.gameId) ? null : room.economy;
+    }
+    synchronized void onGameCreated(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
+        boolean ok=error==null&&result!=null&&result.ok();
+        Economy e=currentEconomy(roomId,gameId);
+        if(e==null) { // The room vanished while the transaction ran: refund everyone.
+            if(ok) chain.cancelGame(gameId);
+            return;
+        }
+        e.inFlight=false;
+        Room room=rooms.get(roomId);
+        if(!ok) {
+            e.funding="FAILED";
+            e.message="Could not open the game on NEAR Testnet: "+(error!=null?"bridge unavailable":result.error());
+            room.seats.forEach(s->s.ready=s.npc);
+        } else if(e.funding.equals("CREATING")) {
+            e.funding="AWAITING_PAYMENTS";e.nextPoll=0;
+        } // CANCELLING: tick() sends the cancellation now that the game exists.
+        publish(room);
+    }
+    synchronized void onGameStatus(String roomId,String gameId,Optional<ChainGateway.ChainGame> game,Throwable error) {
+        Economy e=currentEconomy(roomId,gameId);
+        if(e==null) return;
+        e.inFlight=false;
+        if(!e.funding.equals("AWAITING_PAYMENTS")) return;
+        e.nextPoll=System.currentTimeMillis()+pollMillis;
+        if(error!=null||game.isEmpty()) return; // Transient: poll again.
+        Room room=rooms.get(roomId);
+        if(!game.get().state().equals("OPEN")) {
+            e.funding="FAILED";e.message="The on-chain game is "+game.get().state()+".";
+            room.seats.forEach(s->s.ready=s.npc);publish(room);return;
+        }
+        int before=e.paid.size();
+        for(Seat s:room.seats) if(Boolean.TRUE.equals(game.get().deposited().get(s.accountId))) e.paid.add(s.id);
+        if(room.seats.stream().allMatch(s->e.paid.contains(s.id))) {
+            e.funding="FUNDED";
+            log.info("paid_room_funded room={} game={}",room.code,gameId);
+            beginMatch(room);
+        } else if(e.paid.size()!=before) publish(room);
+    }
+    synchronized void onGameCancelled(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
+        Economy e=currentEconomy(roomId,gameId);
+        if(e==null) return;
+        e.inFlight=false;
+        Room room=rooms.get(roomId);
+        if(error==null&&result!=null&&result.ok()) {
+            e.funding="CANCELLED";
+        } else {
+            e.funding="FAILED";
+            e.message=(e.message==null?"":e.message+" ")+"Cancelling failed; after the on-chain deadline any player can call claim_refund.";
+        }
+        room.seats.forEach(s->s.ready=s.npc);
+        publish(room);
+    }
+    /** Starts cancelling an unfunded paid game. tick() sends the transaction. */
+    private void cancelFunding(Room room,String reason) {
+        var e=room.economy;
+        if(e==null||!e.active()||e.funding.equals("CANCELLING")) return;
+        e.funding="CANCELLING";e.message=reason;
+    }
+    private void settleIfPaid(Room room) {
+        var e=room.economy;
+        if(e==null||!e.funding.equals("FUNDED")||!e.settlement.equals("NOT_STARTED")) return;
+        Seat winner=seat(room,room.state().winnerId());
+        e.payouts=List.of(new RoomPayout(winner.id,winner.accountId,e.pot.toString()));
+        e.settlement="PENDING";
+        String roomId=room.id, gameId=e.gameId;
+        log.info("paid_room_settle room={} game={} winner={} pot={}",room.code,gameId,winner.accountId,e.pot);
+        chain.settleGame(gameId,List.of(new ChainGateway.Payout(winner.accountId,e.pot)))
+            .whenComplete((result,error)->onSettled(roomId,gameId,result,error));
+    }
+    synchronized void onSettled(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
+        Economy e=currentEconomy(roomId,gameId);
+        if(e==null) return;
+        Room room=rooms.get(roomId);
+        if(error==null&&result!=null&&result.ok()) {
+            e.settlement="CONFIRMED";e.txHash=result.txHash();e.message=null;
+        } else {
+            e.settlement="FAILED";
+            e.txHash=result!=null?result.txHash():null;
+            e.message="Settlement failed. After the on-chain deadline any player can call claim_refund to recover the buy-ins.";
+        }
+        publish(room);
+        for(Seat s:room.seats) if(s.socket!=null&&room.game!=null&&room.state().winnerId()!=null) result(room,s.socket);
+    }
+    /** A paid room disappears: refund an open or unsettled on-chain game. */
+    private void releaseChainGame(Room room) {
+        var e=room.economy;
+        if(e==null||e.gameId==null) return;
+        // CREATING is handled by onGameCreated once the transaction finishes.
+        boolean unsettled=e.funding.equals("AWAITING_PAYMENTS") || e.funding.equals("CANCELLING")&&!e.cancelSent
+            || e.funding.equals("FUNDED")&&e.settlement.equals("NOT_STARTED");
+        if(!unsettled) return;
+        log.info("paid_room_released room={} game={}",room.code,e.gameId);
+        chain.cancelGame(e.gameId);
+    }
+    private void beginMatch(Room room) {
         room.matchId=UUID.randomUUID().toString();
         room.reveal=null;room.revision=0;room.resumeAt=0;room.eventSequence=0;room.history.clear();
         if(room.gameType.equals("BLACKJACK")) {
@@ -285,6 +469,7 @@ public class RoomService {
         if(room.state().winnerId()!=null) {
             room.deadline=0;room.seats.forEach(s->s.ready=s.npc);
             event(room,"GAME_OVER",before.round(),room.state().winnerId(),null,null,null,null);
+            settleIfPaid(room);
             for(Seat s:room.seats) if(s.socket!=null) result(room,s.socket);
         } else {
             if(reveal!=null) event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
@@ -300,7 +485,8 @@ public class RoomService {
         Room room=room(peer);assertRoom(room,payload);
         Seat seat=seat(room,peer.playerId);
         seat.socket=null;seat.ready=false;
-        boolean inProgress=room.phase().equals("IN_PROGRESS");
+        if(room.phase().equals("FUNDING")) cancelFunding(room,seat.name+" left before the match started. Buy-ins go back to casino balances.");
+        boolean inProgress=room.phase().equals("IN_PROGRESS")||room.phase().equals("FUNDING");
         abandon(room,seat);
         peer.roomId=null;peer.playerId=null;
         if(!inProgress) room.seats.remove(seat);
@@ -326,6 +512,7 @@ public class RoomService {
             if(room.state().winnerId()!=null) {
                 room.deadline=0;room.seats.forEach(s->s.ready=s.npc);
                 event(room,"GAME_OVER",room.state().round(),room.state().winnerId(),null,null,null,null);
+                settleIfPaid(room);
                 for(Seat s:room.seats) if(s.socket!=null) result(room,s.socket);
             } else {
                 event(room,"ROUND_START",room.state().round(),room.state().currentPlayerId(),null,null,null,null);
@@ -337,9 +524,15 @@ public class RoomService {
         if(recipient.socket==null||!recipient.socket.isOpen()) return;
         var seats=room.seats.stream().map(s->{
             boolean connected=s.npc||s.socket!=null&&s.socket.isOpen();
-            return new RoomSeat(s.id,s.name,s.avatar,s.npc,s.ready,connected,s.abandoned?"LEFT":connected?"ONLINE":"DISCONNECTED");
+            return new RoomSeat(s.id,s.name,s.avatar,s.npc,s.ready,connected,s.abandoned?"LEFT":connected?"ONLINE":"DISCONNECTED",s.accountId);
         }).toList();
-        send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.gameType,room.phase(),room.hostId,recipient.id,seats));
+        RoomEconomy economy=null;
+        if(room.economy!=null) {
+            var e=room.economy;
+            economy=new RoomEconomy("PAID",chain.buyIn().toString(),chain.casinoId(),e.gameId,e.funding,e.deadline,
+                List.copyOf(e.paid),e.settlement,e.txHash,e.payouts,e.message);
+        }
+        send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.gameType,room.phase(),room.hostId,recipient.id,seats,economy));
         if(room.blackjack!=null) {
             var state=room.blackjack.publicState();
             var hands=state.players().stream().map(h->{Seat s=room.dealt.get(h.playerId());
@@ -367,7 +560,8 @@ public class RoomService {
             "bidderId",r.bidderId(),"callerId",r.callerId(),"bid",r.bid(),"actualCount",r.actualCount()));
     }
     private void result(Room room,WebSocketSession socket) {
-        send(socket,"GAME_RESULT",null,Map.of("matchId",room.matchId,"winnerId",room.state().winnerId(),"settlement","NOT_STARTED"));
+        String settlement=room.economy==null?"NOT_STARTED":room.economy.settlement;
+        send(socket,"GAME_RESULT",null,Map.of("matchId",room.matchId,"winnerId",room.state().winnerId(),"settlement",settlement));
     }
     /** Humans, deterministic NPCs, and timeouts all use the same validated engine actions. */
     @Scheduled(fixedDelay=200)
@@ -378,7 +572,8 @@ public class RoomService {
         while(iterator.hasNext()) {
             Room room=iterator.next();
             if(now-room.lastActivity>3_600_000||room.seats.stream().noneMatch(s->!s.npc&&!s.abandoned
-                &&(s.socket!=null||now-s.disconnectedAt<120_000))) {iterator.remove();continue;}
+                &&(s.socket!=null||now-s.disconnectedAt<120_000))) {releaseChainGame(room);iterator.remove();continue;}
+            if(room.economy!=null) fundingTick(room,now);
             boolean changed=false;
             for(Seat s:room.seats) if(!s.npc&&!s.abandoned&&s.socket==null&&now-s.disconnectedAt>=120_000) {
                 abandon(room,s);changed=true;
@@ -405,6 +600,31 @@ public class RoomService {
             String actor=room.state().currentPlayerId();Seat seat=seat(room,actor);
             if((seat.npc||seat.abandoned)?now>=room.npcAt:now>=room.deadline)
                 apply(room,actor,room.game.fallbackFor(actor),seat.npc?"NPC":seat.abandoned?"UNAVAILABLE":"TIMEOUT");
+        }
+    }
+    /** Drives paid-room funding: one chain request at a time per room. */
+    private void fundingTick(Room room,long now) {
+        var e=room.economy;
+        if(e.inFlight) return;
+        String roomId=room.id, gameId=e.gameId;
+        switch(e.funding) {
+            case "AWAITING_PAYMENTS" -> {
+                if(now>e.deadline) {
+                    cancelFunding(room,"Not every player paid the buy-in in time. Buy-ins go back to casino balances.");
+                    publish(room);
+                    return;
+                }
+                if(now<e.nextPoll) return;
+                e.inFlight=true;
+                chain.game(gameId).whenComplete((game,error)->onGameStatus(roomId,gameId,game,error));
+            }
+            case "CANCELLING" -> {
+                if(e.cancelSent) return;
+                e.cancelSent=true;e.inFlight=true;
+                log.info("paid_room_cancel room={} game={} reason={}",room.code,gameId,e.message);
+                chain.cancelGame(gameId).whenComplete((result,error)->onGameCancelled(roomId,gameId,result,error));
+            }
+            default -> {}
         }
     }
     /** Application heartbeat also detects half-open sockets after network loss. */

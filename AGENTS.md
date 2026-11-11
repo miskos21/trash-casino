@@ -70,9 +70,11 @@ raccoon-royale/
 ### P0: must work
 
 1. One human can play a full Liar's Dice match against one NPC in the browser.
-2. A new player verifies wallet ownership and receives one starter TRASH grant.
-3. The player pays a fixed buy-in into escrow with `ft_transfer_call`.
-4. The match settles on testnet and the winner receives the pot.
+2. A player connects a NEAR wallet, verifies ownership (NEP-413), claims test TRASH
+   from the token faucet, and deposits it into the casino with `ft_transfer_call`.
+3. The player pays a fixed buy-in from their casino balance into escrow with `join_game`.
+4. The match settles on testnet, the winner receives the pot in their casino balance,
+   and the player can withdraw the balance back to their wallet.
 5. Free-text NPC chat works during a match.
 6. One end-to-end paid information deal works.
 7. An NPC can be persuaded to tip a player, and the contract enforces the limit.
@@ -84,7 +86,7 @@ raccoon-royale/
 - Hall of Shame: successful cons, shown with attacker message and result
 - Second NPC and 2-4 participant matches
 - Human-versus-human rooms and reconnect handling
-- Buying and redeeming TRASH through `trash-treasury`
+- Paid Blackjack sessions against the house (`house_stake` in `create_game`)
 - Cosmetics shop with one purchasable item
 - Better animations and chat presentation
 
@@ -94,12 +96,13 @@ raccoon-royale/
 - Poker or other minigames
 - NPC memory hardened from previous attacks
 - Dice commitments with post-round reveal
-- Dumpster mechanic: part of each pot goes to a shared pool that is periodically burned
+- Buying TRASH from the casino with test NEAR and redeeming it (replaces the faucet)
 - Agent-to-agent negotiation
 
 ### Out of scope
 
 - NFT cosmetics
+- Burning TRASH (no "dumpster" mechanic)
 - NEAR Intents, because they have no testnet
 - Provably fair or trustless randomness claims
 
@@ -121,8 +124,9 @@ settlement checks, or action validation to save time.
 
 ## Characters and AI
 
-Agent attributes: identity, avatar, personality, risk tolerance, wallet, TRASH budget,
-and spending limits. Persistent memory and relationship scores are P1.
+Agent attributes: identity, avatar, personality, risk tolerance, NEAR account, and
+contract-enforced tip limits. NPCs belong to the casino: they have no money of their
+own, play with house money, and tip from the house. Persistent memory and relationship scores are P1.
 
 - **Don Raccoone:** greedy, aggressive, manipulative, enjoys negotiating
 - **Foxy:** talkative, impulsive, bluffs sometimes
@@ -167,46 +171,59 @@ after verified payment, and only if that NPC is authorized to share it.
 
 ## Contracts
 
+Full design, amounts, and trust assumptions: [blockchain/README.md](blockchain/README.md).
+
+### Economic model
+
+- The casino owns the whole initial TRASH supply as its house bankroll.
+- Players hold TRASH in their own wallet, deposit it into the casino to play, and
+  can withdraw their casino balance back to the wallet at any time.
+- Inside the casino, buy-ins, payouts, refunds, tips, and deal payments are ledger
+  entries. Only deposits and withdrawals move tokens.
+- NPCs belong to the casino. Their stakes, winnings, and tips come from and go to the house.
+- On testnet a rate-limited token faucet mints free test TRASH to the player's wallet.
+  In a real product the player would buy TRASH from the casino instead.
+
 ### trash-token
 
 Standards-compliant NEP-141 token using the official reference implementation.
 Name: Trash Coin. Symbol: TRASH. Decimals: 24. Support NEP-145 storage registration.
+Plus `faucet()` (fixed amount per call, per-account cooldown, owner can disable).
 
 ### trash-casino
 
-- `ft_on_transfer`: accept buy-ins and return unused amounts on invalid messages
-- `settle_game`: pay results from the authorized settlement account
-- `cancel_game` and `claim_refund`: recover funds from cancelled or expired matches
-- `get_game_status`: read match state
-- `agent_pay`: spend from an agent balance within per-transfer and daily limits
-- `get_agent_limits`: read current limits and spending
+- `ft_on_transfer`: `deposit` and `fund_house`; return the full amount on anything else
+- `withdraw`: 1 yoctoNEAR, restores the balance if the transfer fails
+- `create_game`, `settle_game`, `cancel_game`: authorized settlement account only
+- `join_game`: the player pays the buy-in from their casino balance
+- `claim_refund`: recover funds from expired matches
+- `pay_offer`: pay an NPC deal once per offer ID
+- `agent_pay`: tip from the house within per-transfer and daily agent limits
+- Views: `get_balance`, `get_house`, `get_totals`, `get_game_status`,
+  `get_agent_limits`, `get_offer_payment`, `get_config`
 
 Requirements:
 
 - Accept only the configured TRASH token in `ft_on_transfer`.
 - Use unique match IDs and explicit states.
-- Never pay out more than a match has received.
+- Never pay out more than a match has received. Pay only seated players.
 - Reject double settlement.
+- Bound house money per game and per day.
 - Handle failed cross-contract calls with callbacks and restore state.
 - Allow refunds after a deadline so funds cannot stay stuck.
 
 ### Agent spending
 
-`ft_transfer` requires 1 yoctoNEAR, and function call keys cannot attach deposits.
-An agent key therefore cannot call `ft_transfer` directly.
+Give each agent a function call key restricted to the non-payable `agent_pay` method.
+The contract enforces the per-transfer and daily limits and credits the receiver's
+casino balance from the house. This is the core security boundary, so do not enforce
+the limit only in Java.
 
-Hold agent TRASH inside `trash-casino`. Give each agent a function call key restricted
-to the non-payable `agent_pay` method. The contract enforces the limits and makes the
-token transfer. This is the core security boundary, so do not enforce the limit only in Java.
+### Buying and redeeming TRASH (P2, future)
 
-### trash-treasury (P1)
-
-Fixed rate: 1 test NEAR = 100 TRASH.
-
-- `buy_trash`, `ft_on_transfer` for redemption, `get_quote`, `get_reserves`,
-  `get_redemption_status`, `claim_refund`
-- Keep storage and gas reserves separate from redeemable reserves.
-- Prevent double redemption, duplicate payment processing, and unauthorized withdrawals.
+Replaces the faucet: the casino sells TRASH for test NEAR at a fixed rate and buys it
+back. Redemption must be limited by the casino's NEAR reserve, and free faucet TRASH
+must not be redeemable.
 
 ## Client
 
@@ -231,6 +248,9 @@ REST endpoints:
 
 ```text
 GET  /api/health
+GET  /api/chain
+POST /api/auth/nonce
+POST /api/auth/verify
 GET  /api/profile
 GET  /api/wallet/balance
 GET  /api/wallet/transactions
@@ -256,7 +276,7 @@ IDs, grant items only after confirmed payment, and prevent double delivery.
 5. Add one NPC with fallback moves, then free-text chat.
 6. Implement and sandbox-test `trash-token` and `trash-casino`.
 7. Deploy to testnet and connect the bridge.
-8. Connect wallet verification, buy-in, and settlement.
+8. Connect wallet verification, faucet, deposit, buy-in, settlement, and withdrawal.
 9. Add the paid information deal and contract-limited tip.
 10. Finish the demo, README, and P1 items as time allows.
 
@@ -278,7 +298,9 @@ Test coverage must include:
 - Double settlement, refund handling, and escrow payout limits
 - `agent_pay` per-transfer and daily limits
 - Duplicate negotiation fulfillment and duplicate shop payments
-- Treasury reserve invariants and insufficient reserves, once the treasury exists
+- Casino accounting invariant (token balance = house + balances + escrow + pending withdrawals)
+- Faucet cooldown, deposit, withdrawal, and failed-withdrawal restore
+- House limits per game and per day
 
 Use NEAR Sandbox or Workspaces for contract tests. Run the relevant tests before calling
 a milestone done. Fill in the commands below as each component is created.
@@ -287,10 +309,11 @@ a milestone done. Fill in the commands below as each component is created.
 # Client tests and build: npm ci && npm test && npm run build
 # Backend tests: cd backend-java && ./mvnw verify
 # Contract tests (Linux/macOS/WSL2): cd blockchain && ./scripts/build.sh && ./scripts/test.sh
-# Bridge tests: not implemented (reserved workspace only)
+# Bridge tests: npm test -w near-bridge
 # Local stack: cp .env.example .env && docker compose up --build -d; npm run dev
 # Headless transport check (running backend): node scripts/smoke.mjs
 # Headless complete game (running backend): node scripts/game-smoke.mjs
+# Headless paid flow (backend + bridge + deployed contracts + PLAYER_* env): node scripts/paid-smoke.mjs
 # Browser checks (running stack): npx playwright install chromium && npm run test:browser
 ```
 
