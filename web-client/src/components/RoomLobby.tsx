@@ -41,7 +41,7 @@ export function RoomLobby({ connection: c, wallet, avatar, onStarted }: { connec
     <p className="free-play-note">{paid
       ? `Everyone pays ${buyIn} TRASH from their casino balance into an on-chain escrow. The winner takes the pot. Agents play with house money.`
       : 'No buy-in. No token rewards.'} {game === 'BLACKJACK'
-      ? 'The house deals. Beat the dealer without going over 21.' : 'Win by being the last player with dice.'}
+      ? 'The house deals. Beat the dealer without going over 21.' : 'Everyone keeps 5 dice; a lost challenge costs one chip. Most chips wins.'}
       {' '}Agents are rule-based NPC players and take seats from the four available.
       {game === 'LIARS_DICE' && agents === 0 ? ' Liar’s Dice needs a second player to start.' : ''}</p>
     {paid && !sessionToken && <p className="room-error">Connect your wallet below first.</p>}

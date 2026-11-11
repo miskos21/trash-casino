@@ -111,15 +111,19 @@ settlement checks, or action validation to save time.
 
 ## Liar's Dice rules
 
-- 2-4 participants, each starting with 5 six-sided dice.
+- 2-4 participants. Every active participant rolls 5 six-sided dice every round; dice are never lost.
+- Chip variant (team decision 2026-11-11): everyone starts with 5 chips.
 - Each round, the server rolls all dice privately with `SecureRandom`.
 - A bid is `(quantity, face)` and refers to all dice on the table.
 - A new bid must raise the quantity, or keep it and raise the face.
 - Ones are not wild in the MVP.
 - Instead of bidding, a player may call bluff. All dice are revealed and counted.
-- If the bid is met, the caller loses one die. Otherwise, the bidder loses one die.
-- The round loser starts the next round. If eliminated, the next active player starts.
-- A player with no dice is out. The last player with dice wins.
+- If the bid is met, the caller pays one chip to the bidder. Otherwise, the bidder pays one chip to the caller.
+- Chips only move between players, so their total is constant. Settlement pays `chips × chip value`,
+  which always equals the escrowed buy-ins.
+- The round loser starts the next round. If out of chips, the next active player starts.
+- A player with no chips is out. The match ends when one player holds every chip or the host ends it.
+  Most chips wins; equal chips is a tie. A player who leaves keeps their chips.
 - A turn timeout triggers a deterministic legal action.
 
 ## Characters and AI

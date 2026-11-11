@@ -76,6 +76,12 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 5
+        },
+        "chips": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20,
+          "description": "Chips held. Every player starts with 5; a lost challenge pays one chip to the other player in it."
         }
       },
       "required": [
@@ -83,7 +89,8 @@
         "displayName",
         "avatar",
         "npc",
-        "diceCount"
+        "diceCount",
+        "chips"
       ]
     },
     "PublicGameState": {
@@ -150,7 +157,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "The single player with the most chips when the match ends, or null on a tie or while playing."
         },
         "revision": {
           "type": "integer",
@@ -316,7 +324,7 @@
         "message": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 500
+          "maxLength": 280
         }
       },
       "required": [
@@ -1113,6 +1121,9 @@
             "actualCount": {
               "type": "integer",
               "minimum": 0
+            },
+            "winnerId": {
+              "$ref": "#/$defs/Identifier"
             }
           },
           "required": [
@@ -1123,7 +1134,8 @@
             "bidderId",
             "callerId",
             "bid",
-            "actualCount"
+            "actualCount",
+            "winnerId"
           ]
         }
       },
@@ -1305,7 +1317,15 @@
               "$ref": "#/$defs/Identifier"
             },
             "winnerId": {
-              "$ref": "#/$defs/Identifier"
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Identifier"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The single player with the most chips, or null on a tie."
             },
             "settlement": {
               "type": "string",
@@ -1315,12 +1335,37 @@
                 "CONFIRMED",
                 "FAILED"
               ]
+            },
+            "standings": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "playerId": {
+                    "$ref": "#/$defs/Identifier"
+                  },
+                  "chips": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20
+                  }
+                },
+                "required": [
+                  "playerId",
+                  "chips"
+                ]
+              },
+              "description": "Final chips per seat. A future escrow pays chips × chip value, which always sums to the buy-ins."
             }
           },
           "required": [
             "matchId",
             "winnerId",
-            "settlement"
+            "settlement",
+            "standings"
           ]
         }
       },
@@ -1527,6 +1572,9 @@
         },
         {
           "$ref": "#/$defs/BLACKJACK_STAND"
+        },
+        {
+          "$ref": "#/$defs/MATCH_END"
         }
       ]
     },
@@ -1576,6 +1624,9 @@
         },
         {
           "$ref": "#/$defs/ROOM_LEFT"
+        },
+        {
+          "$ref": "#/$defs/CHAT_MESSAGE"
         }
       ]
     },
@@ -1672,6 +1723,13 @@
         "game": {
           "$ref": "#/$defs/GameType"
         },
+        "agentMode": {
+          "enum": [
+            "LLM",
+            "TEMPORARY_MOCK"
+          ],
+          "description": "How agents decide: a live LLM, or the labelled offline mock used without an API key."
+        },
         "economy": {
           "anyOf": [
             {
@@ -1690,7 +1748,8 @@
         "phase",
         "hostId",
         "youId",
-        "participants"
+        "participants",
+        "agentMode"
       ]
     },
     "ROOM_STATE": {
@@ -1880,10 +1939,22 @@
           "enum": [
             "PLAYER",
             "NPC",
+            "NPC_FALLBACK",
             "TIMEOUT",
             "UNAVAILABLE",
             null
           ]
+        },
+        "winnerId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "ROUND_RESULT: the player who received the loser's chip."
         }
       },
       "required": [
@@ -1894,7 +1965,8 @@
         "bid",
         "loserId",
         "actualCount",
-        "cause"
+        "cause",
+        "winnerId"
       ]
     },
     "GameType": {
@@ -2377,6 +2449,121 @@
           },
           "required": [
             "roomId"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "CHAT_MESSAGE": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "CHAT_MESSAGE"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Public table chat. Player text is untrusted: agents read it as data and it never changes their permissions.",
+          "properties": {
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "messageId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "senderId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "senderName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "agent": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "sentAtEpochMillis": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "matchId",
+            "messageId",
+            "senderId",
+            "senderName",
+            "agent",
+            "text",
+            "sentAtEpochMillis"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "type",
+        "requestId",
+        "payload"
+      ]
+    },
+    "MATCH_END": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "MATCH_END"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Host only: end a running Liar's Dice match; chips become final standings.",
+          "properties": {
+            "roomId": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "matchId": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "roomId",
+            "matchId"
           ]
         }
       },

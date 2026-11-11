@@ -44,14 +44,13 @@ Flow: [architecture](architecture.md).
 
 ## Not verified yet
 
-- Nothing is deployed to testnet; there are no contract IDs.
-- The browser wallet flow (near-connect connect, `signMessage`, signing
-  transactions) has not been tried with a real testnet wallet. Which wallets support
-  NEP-413 `signMessage` on testnet must be checked during that test.
+- Deployed to testnet on 2026-11-11 as `trashnino-demo.testnet` (see `blockchain/deployments/testnet.json`).
+  The user played the browser flow with a Meteor testnet wallet and reported it works; no
+  automated browser test covers the wallet flow.
 - The on-chain cancel path is covered by contract sandbox tests and Java unit tests,
   but not by the end-to-end script.
 - The Compose `bridge` service and its Dockerfile were written but not built.
-- Paid Blackjack sessions, LLM chat, the paid information deal, and chat-driven tips
+- Paid Blackjack sessions, the paid information deal, and chat-driven tips
   are not built. The contract methods for them exist.
 
 ## Run the local sandbox rehearsal

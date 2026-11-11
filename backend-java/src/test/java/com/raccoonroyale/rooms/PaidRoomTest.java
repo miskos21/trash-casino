@@ -65,7 +65,7 @@ class PaidRoomTest {
 
     void start(long fundingMillis) throws Exception {
         protocol = new Protocol(mapper);
-        rooms = new RoomService(protocol, chain, wallets, 0, 0, 0, fundingMillis, 0);
+        rooms = new RoomService(protocol, new com.raccoonroyale.ai.MockAgentBrain(), new com.raccoonroyale.ai.AgentActionParser(protocol), chain, wallets, 0, 0, 0, 5000, fundingMillis, 0);
     }
 
     String session(String account) throws Exception {

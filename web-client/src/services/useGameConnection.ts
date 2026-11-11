@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BlackjackState, ClientMessage, PlayerGameState, RoomState, ROOM_SESSION, DICE_REVEAL } from '@raccoon-royale/shared-schemas/types';
+import type { BlackjackState, CHAT_MESSAGE, ClientMessage, PlayerGameState, RoomState, ROOM_SESSION, DICE_REVEAL } from '@raccoon-royale/shared-schemas/types';
 import { checkHealth, parseServer } from './backend';
 import { witness, type WitnessedHand } from '../game/shoeVerify';
 
 type Status = 'checking' | 'online' | 'offline';
 const storageKey = 'raccoon-guest-session';
 type Session = ROOM_SESSION['payload'];
+export type ChatLine = CHAT_MESSAGE['payload'];
 function savedSession(): Session | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null');
@@ -26,6 +27,7 @@ export function useGameConnection() {
   // Settled hands this tab saw, kept so the shoe can be checked against its reveal.
   const [witnessed, setWitnessed] = useState<{ matchId: string; hands: WitnessedHand[] }>({ matchId: '', hands: [] });
   const [reveal, setReveal] = useState<DICE_REVEAL['payload'] | null>(null);
+  const [chat, setChat] = useState<ChatLine[]>([]);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -77,9 +79,15 @@ export function useGameConnection() {
               if (message.payload.roomId !== resume.current?.roomId) break;
               resume.current = null;
               try { sessionStorage.removeItem(storageKey); } catch { /* No storage. */ }
-              setRoom(null); setGame(null); setBlackjack(null); setReveal(null); setPending(false); setLeaving(false);
+              setRoom(null); setGame(null); setBlackjack(null); setReveal(null); setChat([]); setPending(false); setLeaving(false);
               break;
-            case 'GAME_START': setReveal(null); setGame(null); setBlackjack(null); break;
+            case 'GAME_START': setReveal(null); setGame(null); setBlackjack(null); setChat([]); break;
+            case 'CHAT_MESSAGE': {
+              const line = message.payload;
+              // Reconnects replay recent chat, so keep each message once.
+              setChat((previous) => previous.some((m) => m.messageId === line.messageId) ? previous : [...previous, line].slice(-40));
+              break;
+            }
             case 'GAME_STATE': setGame(message.payload); setPending(false); break;
             case 'BLACKJACK_STATE': {
               const state = message.payload, seen = witness(state);
@@ -94,7 +102,7 @@ export function useGameConnection() {
             case 'ERROR':
               setError(message.payload.message); setPending(false); setLeaving(false);
               if (message.payload.code === 'INVALID_SESSION') {
-                resume.current = null; setRoom(null); setGame(null); setBlackjack(null); setReveal(null);
+                resume.current = null; setRoom(null); setGame(null); setBlackjack(null); setReveal(null); setChat([]);
                 try { sessionStorage.removeItem(storageKey); } catch { /* No storage. */ }
               }
               break;
@@ -127,12 +135,21 @@ export function useGameConnection() {
     ws.send(JSON.stringify({ ...command, requestId: requestId() }));
   }, [socket]);
 
+  /** Chat does not lock game controls: replies arrive as CHAT_MESSAGE, refusals as ERROR. */
+  const sendChat = useCallback((matchId: string, text: string) => {
+    const ws = connection.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) { setError('Wait for the server connection.'); return false; }
+    setError('');
+    ws.send(JSON.stringify({ protocolVersion: 1, type: 'PLAYER_CHAT', requestId: requestId(), payload: { matchId, message: text } }));
+    return true;
+  }, []);
+
   const leave = useCallback(() => {
     if (!room || socket !== 'online' || leaving) return;
     setLeaving(true);
     send({ protocolVersion: 1, type: 'ROOM_LEAVE', requestId: null, payload: { roomId: room.roomId } });
   }, [room, socket, leaving, send]);
-  return { health, socket, room, game, blackjack, witnessed: witnessed.hands, reveal, error, pending, leaving, send, leave,
+  return { health, socket, room, game, blackjack, witnessed: witnessed.hands, reveal, chat, error, pending, leaving, send, sendChat, leave,
     retry: () => setAttempt((n) => n + 1), clearError: () => setError('') };
 }
 export type GameConnection = ReturnType<typeof useGameConnection>;

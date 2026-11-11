@@ -49,13 +49,22 @@ test('token amounts are exact decimal strings', () => {
 
 test('public snapshots cannot carry private dice', () => {
   const state = { revision: 0, deadlineEpochMillis: 0, resumeAtEpochMillis: 0, matchId: 'm', phase: 'IN_PROGRESS', round: 1, participants: [
-    { playerId: 'p1', displayName: 'Player', avatar: 'RACCOON', npc: false, diceCount: 5 },
-    { playerId: 'npc', displayName: 'Don', avatar: 'RACCOON', npc: true, diceCount: 5 },
+    { playerId: 'p1', displayName: 'Player', avatar: 'RACCOON', npc: false, diceCount: 5, chips: 6 },
+    { playerId: 'npc', displayName: 'Don', avatar: 'RACCOON', npc: true, diceCount: 5, chips: 4 },
   ], currentPlayerId: 'p1', lastBid: null, lastBidderId: null, winnerId: null };
   assert.ok(validate('PublicGameState', state));
   assert.ok(validate('ServerMessage', envelope('GAME_STATE', { publicState: state, ownDice: [1, 2, 3, 4, 5] })));
   assert.equal(validate('PublicGameState', { ...state, dice: { npc: [1, 2, 3, 4, 5] } }), false);
   assert.equal(validate('Participant', { ...state.participants[1], dice: [6] }), false);
+  assert.equal(validate('Participant', { ...state.participants[1], chips: -1 }), false);
+});
+
+test('chip results: tie has no winner and standings carry only public chips', () => {
+  const standings = [{ playerId: 'a', chips: 5 }, { playerId: 'b', chips: 5 }];
+  assert.ok(validate('ServerMessage', envelope('GAME_RESULT', { matchId: 'm', winnerId: null, standings, settlement: 'NOT_STARTED' })));
+  assert.equal(validate('ServerMessage', envelope('GAME_RESULT', { matchId: 'm', winnerId: 'a', standings: [{ playerId: 'a', chips: 5, dice: [1] }, standings[1]], settlement: 'NOT_STARTED' })), false);
+  assert.ok(validate('ClientMessage', envelope('MATCH_END', { roomId: 'r', matchId: 'm' })));
+  assert.equal(validate('ClientMessage', envelope('MATCH_END', { roomId: 'r', matchId: 'm', winnerId: 'me' })), false);
 });
 
 test('health is explicitly testnet and never a chain health claim', () => {
@@ -66,7 +75,7 @@ test('health is explicitly testnet and never a chain health claim', () => {
 
 test('public activity rejects private dice and guest recovery credentials', () => {
   const event = { id: 'event-1', round: 1, type: 'BID', actorId: 'me', bid: { quantity: 2, face: 3 },
-    loserId: null, actualCount: null, cause: 'PLAYER' };
+    loserId: null, actualCount: null, cause: 'PLAYER', winnerId: null };
   assert.ok(validate('PublicGameEvent', event));
   assert.equal(validate('PublicGameEvent', { ...event, ownDice: [6, 6, 6] }), false);
   assert.equal(validate('PublicGameEvent', { ...event, resumeToken: 'a'.repeat(43) }), false);
@@ -96,4 +105,15 @@ test('blackjack moves carry no cards and the dealer hole card has no public fiel
   assert.equal(validate('BlackjackState', { ...state, shoe: { ...state.shoe, order: [{ rank: 'K', suit: 'S' }] } }), false); // Order only via reveal.
   assert.equal(validate('BlackjackShoe', { ...state.shoe, commitment: 'not-a-hash' }), false);
   assert.ok(validate('BlackjackShoe', { ...state.shoe, reveal: { salt: 'b'.repeat(32), order: [{ rank: 'K', suit: 'S' }] } }));
+});
+
+test('table chat is bounded and a client cannot impersonate an agent', () => {
+  assert.ok(validate('ClientMessage', envelope('PLAYER_CHAT', { matchId: 'm', message: 'Don, sell me your dice?' })));
+  assert.equal(validate('ClientMessage', envelope('PLAYER_CHAT', { matchId: 'm', message: 'x'.repeat(281) })), false);
+  assert.equal(validate('ClientMessage', envelope('PLAYER_CHAT', { matchId: 'm', message: 'hi', agent: true })), false);
+  assert.equal(validate('ClientMessage', envelope('CHAT_MESSAGE', { matchId: 'm', messageId: 'c1', senderId: 'don-1',
+    senderName: 'Don Raccoone', agent: true, text: 'Pay me.', sentAtEpochMillis: 1 })), false);
+  assert.ok(validate('ServerMessage', envelope('CHAT_MESSAGE', { matchId: 'm', messageId: 'c1', senderId: 'don-1',
+    senderName: 'Don Raccoone', agent: true, text: 'Pay me.', sentAtEpochMillis: 1 })));
+  assert.equal(validate('AgentAction', { action: 'CHAT', bid: null, proposedPrice: '0', message: 'hi', agreementId: null, privateKey: 'x' }), false);
 });

@@ -6,6 +6,9 @@ server:
 spring:
   application:
     name: raccoon-royale-backend
+  config:
+    # Local secrets such as LLM_API_KEY live in the gitignored root .env. OS environment variables still win.
+    import: optional:file:../.env[.properties],optional:file:.env[.properties]
   # Milestone 1 has no repositories. Explicitly opt into PostgreSQL with its profile.
   autoconfigure:
     exclude:
@@ -31,6 +34,13 @@ app:
     agents:
       don: ${NEAR_AGENT_DON_ACCOUNT_ID:}
       foxy: ${NEAR_AGENT_FOXY_ACCOUNT_ID:}
+  llm:
+    # auto: live LLM when LLM_API_KEY is set, otherwise the TEMPORARY MOCK brain. Also: mock, live.
+    mode: ${LLM_MODE:auto}
+    base-url: ${LLM_BASE_URL:https://api.groq.com/openai/v1}
+    model: ${LLM_MODEL:openai/gpt-oss-120b}
+    api-key: ${LLM_API_KEY:}
+    timeout-ms: ${LLM_TIMEOUT_MS:5000}
 logging:
   level:
     root: INFO

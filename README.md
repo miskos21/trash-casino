@@ -20,8 +20,8 @@ Implemented locally:
 - Shared JSON schemas, generated TypeScript declarations, validation tests.
 - Isolated authoritative Liar's Dice engine with private views, increasing bids,
   bluff resolution, elimination, full match completion, deterministic fallback.
-- Guest rooms for up to four seats: humans plus 0–2 rule-based agents (Don Raccoone,
-  Foxy) chosen when the room is created, room codes,
+- Guest rooms for up to four seats: humans plus 0–2 agents (Don Raccoone, Foxy)
+  chosen when the room is created, room codes,
   ready states, host start, timed turns, dice reveal, winner, and rematch.
 - Recipient-specific game state, browser controls and dice, 3D seats for each
   participant, reload recovery using a server-issued guest capability.
@@ -35,10 +35,21 @@ Implemented locally:
   Blackjack uses a larger table with a separate four-column area for each hand;
   every card keeps the same physical size as longer hands wrap into more rows.
 
+- LLM agents: in Liar's Dice, Don and Foxy choose their moves with any OpenAI-compatible
+  LLM (Groq, xAI, NEAR AI Cloud). Public table chat with the agents works in both games.
+  Every reply is schema-validated and engine-validated; a bad, illegal, or slow (5 s)
+  reply becomes the deterministic legal fallback. Without an API key the agents use a
+  clearly labelled `TEMPORARY MOCK` brain. See [Agents and chat](#agents-and-chat).
+  The offline agent brain is labelled `TEMPORARY MOCK` in code, logs, and the chat panel.
+
 ### Playing for TRASH (NEAR Testnet)
 
 TRASH has no real-world value. Economic model and contracts: [blockchain/README.md](blockchain/README.md).
 Flow and trust boundaries: [architecture](docs/architecture.md). Verification: [economy milestone](docs/economy.md).
+
+Deployed on NEAR Testnet: token `token.trashnino-demo.testnet`, casino
+`casino.trashnino-demo.testnet`, NPCs `don.trashnino-demo.testnet` and
+`foxy.trashnino-demo.testnet` ([blockchain/deployments/testnet.json](blockchain/deployments/testnet.json)).
 
 - The casino contract owns the whole initial supply as its house bankroll. NPCs
   belong to the casino and play and tip with house money.
@@ -47,15 +58,12 @@ Flow and trust boundaries: [architecture](docs/architecture.md). Verification: [
 - **Deposit** moves TRASH into the casino balance; **Withdraw** sends it back.
 - A paid Liar's Dice room (**10 TRASH buy-in**) opens an on-chain escrow. Each human
   pays from their casino balance; the match starts only when the chain shows every
-  seat paid. The winner's pot is settled on-chain and shown with its transaction.
+  seat paid. The pot goes to the player with the most chips (a tie splits it) and is
+  settled on-chain, shown with its transaction.
 
-Implemented and tested end to end on a local NEAR Sandbox (contracts, bridge,
-backend, and a headless player). **Not yet deployed to testnet, so there are no
-contract IDs, and the browser wallet flow has not been tried with a real wallet.**
 Without bridge configuration the server offers free play only; nothing is simulated.
-LLM decisions/chat, negotiations, and the chat-driven tip are not implemented yet
-(the contract methods `pay_offer` and `agent_pay` and the bridge endpoint exist).
-The future offline LLM mode must be labelled `TEMPORARY MOCK` when implemented.
+Negotiations, the paid information deal, and the chat-driven tip are not wired into
+the game yet (the contract methods `pay_offer` and `agent_pay` and the bridge endpoint exist).
 The frontend's HTTP-failure unit test uses a labelled `TEMPORARY MOCK` response
 inside that test only; application status checks always use the real backend.
 
@@ -104,10 +112,13 @@ read `online`; stop Java and retry to see `offline`. No wallet or balance is sim
 3. Each human clicks **Ready**. The creator clicks **Start match**.
 4. Your private dice appear below the scene. On your turn raise the quantity, or
    keep it and raise the face, using **Make claim**. Once a claim exists, **Call bluff**
-   reveals the previous round's dice and removes one die from the loser.
+   reveals the previous round's dice. The loser pays **one chip** to the other player
+   in that challenge. Nobody ever loses dice: everyone rolls five dice every round.
 5. Ones are not wild. Turns expire after 30 seconds and use a deterministic legal
-   fallback. Don uses the same fallback, without an LLM. The reveal pause is four
-   seconds. The last participant with dice wins.
+   fallback; agents use it too when their LLM reply is rejected or slow. The reveal
+   pause is four seconds. Everyone starts with 5 chips; with no chips you are out.
+   The match ends when one player holds every chip, or when the host clicks
+   **End match**. Most chips wins (equal chips is a tie). Leaving keeps your chips.
 6. Open **Room & players** to ready up for a rematch. The red **Leave match** / **Leave room** button is also always available in the header. Reloading the same
    tab restores that guest seat and its private view. Use a fresh tab, rather than
    duplicating an existing game tab, to create another player.
@@ -149,11 +160,14 @@ also free play: no buy-in, no payout, and no 3:2 token reward. No double, split,
 insurance, or surrender in this slice.
 
 **What is at stake?** This is a free match: no buy-in, no tokens at risk, no pot,
-and no token reward or persistent points for winning. Each resolved bluff costs
-the loser one die. The last player with dice wins the match. A claim such as
-“3 × 4” means at least three fours across all participants' dice, not a monetary
-bet. If that claim is met, the bluff caller loses a die; otherwise, the person
-who made the claim loses one. Ones are not wild.
+and no token reward or persistent points for winning. Chips are free-play points.
+Each resolved bluff moves one chip from the loser to the other player in that
+challenge, so the total never changes. That is deliberate: a later TRASH buy-in can
+be 5 chips, and settlement can pay `chips × chip value`, which always adds up to
+exactly the escrowed buy-ins that `settle_game` requires. A claim such as “3 × 4”
+means at least three fours across all participants' dice, not a monetary bet. If
+that claim is met, the bluff caller pays; otherwise, the person who made the claim
+pays. Ones are not wild.
 
 Your turn has a gold marker at the seat, a high-contrast banner, a highlighted
 action panel, and an explicit countdown. **Table activity** records the server's
@@ -208,8 +222,47 @@ Vite proxies `/api` and `/ws` to `http://localhost:8080`. For a different backen
 copy `VITE_BACKEND_TARGET` from `.env.example` into `web-client/.env.local` and
 restart Vite. Set `WEB_ORIGIN` in the Java process if the browser origin changes;
 the default allowlist includes `http://localhost:5173` and `http://127.0.0.1:5173`
-(comma-separated in `WEB_ORIGIN`). A root `.env` is consumed by
-Compose, not automatically by Java or Vite. Keep server secrets out of `VITE_*`.
+(comma-separated in `WEB_ORIGIN`). A root `.env` is consumed by Compose and also
+read by the Java backend (OS environment variables win), but not by Vite. Keep server
+secrets out of `VITE_*`.
+
+## Agents and chat
+
+Don Raccoone and Foxy are agents. In Liar's Dice they decide each move with an LLM;
+in Blackjack their moves stay rule-based. In both games you can chat with them in the
+**Table chat** panel. Name an agent ("hey Foxy…") to choose who answers; otherwise
+the first agent replies.
+
+**Use a live LLM (optional).** Any OpenAI-compatible chat completions API works.
+Copy `.env.example` to `.env` in the repository root, set `LLM_API_KEY`, and restart
+Java. Groq has a free tier (key at console.groq.com/keys):
+
+```bash
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=openai/gpt-oss-120b
+LLM_API_KEY=<your key>
+```
+
+For xAI use `https://api.x.ai/v1`; for NEAR AI Cloud `https://cloud-api.near.ai/v1`.
+Model names change; use one listed in the provider's console. The backend log says
+`Agents use a live LLM` or `Agents use the TEMPORARY MOCK brain`, and the chat panel
+shows **Agents: LLM** or **Agents: TEMPORARY MOCK**.
+
+**Without a key** the agents run a labelled `TEMPORARY MOCK` brain: rule-based moves
+from their own dice and canned in-character chat. It is not a language model, but its
+replies go through the same validation, so the whole game works offline.
+
+**What an agent can and cannot do.** An agent's prompt contains only its own dice or
+cards, public table state, and the last eight public chat lines. Player chat is passed
+as escaped data, never as instructions. Each reply must match the shared `AgentAction`
+schema exactly (unknown fields, missing fields, and token amounts are rejected), must
+be an allowed action (BID or CALL_BLUFF on a turn, CHAT for a reply), and the bid must
+be legal in the engine. Otherwise the turn uses the deterministic fallback and the
+public history shows **Agent fallback**. Agents may bluff or reveal their own dice;
+they cannot reveal anyone else's, because they never receive them. Chat is limited to
+280 characters and 4 messages per 20 seconds per player. Every prompt, reply,
+validation result, and resulting action is logged per match ID, without secrets.
+Tips and paid information deals are not connected yet.
 
 ## Play with a remote friend (informal test)
 
@@ -303,17 +356,17 @@ architecture follows `AGENTS.md` where the older specification has different
 directory names or priorities. The shop has not started; buying TRASH for test
 NEAR replaces the faucet later (P2).
 
-Next: deploy to testnet (needs team approval), try the browser wallet flow with a
-real testnet wallet, then NPC chat with validated LLM proposals, the paid
-information deal, and the chat-driven contract-limited tip.
+Next: the paid information deal and the chat-driven, contract-limited tip, wired into the
+existing LLM agent chat.
 
 ## Trust and security
 
 The server is authoritative and trusted to roll private dice with `SecureRandom`
 and report match outcomes. This is **not trustless or provably fair randomness**.
-Only a participant's own dice and public state may enter their view or LLM prompt.
+Only a participant's own dice and public state enter their view or LLM prompt.
 Schema shape checks do not replace identity, rule, agreement, or budget validation.
-LLMs will only propose actions; they will never receive keys or unrestricted tools.
+LLMs only propose actions; the engine validates them. They never receive keys or tools.
+Player chat is sent to the configured LLM provider; do not write anything private in it.
 Token amounts use exact integers (`u128`, `BigInteger`, `bigint`). A transaction
 counts only after its final execution outcome succeeds. Agent tip limits and house
 limits are enforced by the casino contract, not solely in Java.

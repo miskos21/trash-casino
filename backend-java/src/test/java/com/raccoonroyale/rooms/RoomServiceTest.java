@@ -44,12 +44,36 @@ class RoomServiceTest {
         assertEquals("INVALID_SESSION", guest.last("ERROR").path("code").asText());
     }
 
-    @Test void leavingTwoPlayerMatchAwardsRemainingPlayerWithoutWaitingForTimeouts() throws Exception {
+    @Test void leavingTwoPlayerMatchEndsItAtOnceAndTheLeaverKeepsTheirChips() throws Exception {
         var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "CAT", "agents", 0));
         var guest = new Guest(); guest.join(host); host.ready(); guest.ready(); host.start();
         guest.send("ROOM_LEAVE", Map.of("roomId", guest.roomId()));
         assertEquals("FINISHED", host.last("ROOM_STATE").path("phase").asText());
-        assertEquals(host.id(), host.last("GAME_RESULT").path("winnerId").asText());
+        var result = host.last("GAME_RESULT");
+        assertTrue(result.path("winnerId").isNull(), "5 chips each: a tie, nobody lost anything by leaving");
+        for (var standing : result.path("standings")) assertEquals(5, standing.path("chips").asInt());
+    }
+
+    @Test void onlyTheHostCanEndAChipMatchAndStandingsBecomeFinal() throws Exception {
+        var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "CAT", "agents", 1));
+        var guest = new Guest(); guest.join(host); host.ready(); guest.ready(); host.start();
+        String matchId = host.last("GAME_STATE").path("publicState").path("matchId").asText();
+        guest.send("MATCH_END", Map.of("roomId", guest.roomId(), "matchId", matchId));
+        assertEquals("NOT_HOST", guest.last("ERROR").path("code").asText());
+        host.send("PLAYER_BID", host.bid(15, 6, 0)); // Unlikely to be met, so a bluff call moves a chip.
+        guest.send("CALL_BLUFF", Map.of("matchId", matchId, "expectedRevision", 1));
+        var chips = host.last("GAME_STATE").path("publicState").path("participants");
+        int total = 0;
+        for (var p : chips) { assertEquals(5, p.path("diceCount").asInt()); total += p.path("chips").asInt(); }
+        assertEquals(15, total, "Chips move between players and are never created or destroyed");
+        host.send("MATCH_END", Map.of("roomId", host.roomId(), "matchId", matchId));
+        assertEquals("FINISHED", host.last("ROOM_STATE").path("phase").asText());
+        var result = guest.last("GAME_RESULT");
+        assertEquals(3, result.path("standings").size());
+        assertEquals("GAME_OVER", host.last("GAME_STATE").path("publicState").path("history").get(
+            host.last("GAME_STATE").path("publicState").path("history").size() - 1).path("type").asText());
+        host.send("MATCH_END", Map.of("roomId", host.roomId(), "matchId", matchId));
+        assertEquals("ILLEGAL_ACTION", host.last("ERROR").path("code").asText());
     }
 
     @Test void blackjackDepartureDoesNotKeepPlayingNewHandsAndCannotJoinMidShoe() throws Exception {
