@@ -62,6 +62,28 @@ Deployed on NEAR Testnet: token `token.trashnino-demo.testnet`, casino
   settled on-chain, shown with its transaction.
 
 Without bridge configuration the server offers free play only; nothing is simulated.
+
+**Paid play on your own machine needs your own deployment.** The keys for the shared
+`trashnino-demo.testnet` accounts are never handed out. To try paid play locally,
+deploy your own copy to testnet with your own faucet account (about 7.5 of the ~10 free
+test NEAR, Linux/macOS/WSL2 with Rust, `near` CLI, `jq`, and `curl`):
+
+```bash
+cp .env.example .env
+cd blockchain
+near account create-account sponsor-by-faucet-service trashnino-<you>.testnet \
+  autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+./scripts/build.sh
+NEAR_ROOT_ACCOUNT=trashnino-<you>.testnet ./scripts/deploy.sh
+NEAR_ROOT_ACCOUNT=trashnino-<you>.testnet ./scripts/env.sh ../.env
+cd .. && docker compose --profile chain up --build -d
+npm ci && npm run dev    # http://localhost:5173
+```
+
+`deploy.sh` writes your account IDs to the ignored `deployments/testnet.<root>.json`,
+so the shared `deployments/testnet.json` stays untouched. `env.sh` copies only the
+restricted function-call keys (settler, Don, Foxy) and a fresh `BRIDGE_TOKEN` into
+`.env`. Your deployment has its own TRASH, house bankroll, and players.
 Negotiations, the paid information deal, and the chat-driven tip are not wired into
 the game yet (the contract methods `pay_offer` and `agent_pay` and the bridge endpoint exist).
 The frontend's HTTP-failure unit test uses a labelled `TEMPORARY MOCK` response

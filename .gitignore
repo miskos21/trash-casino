@@ -16,3 +16,5 @@ test-results/
 # Built contract Wasm and local sandbox rehearsal output
 blockchain/res/
 blockchain/deployments/sandbox.json
+# A teammate's own testnet deployment (scripts/deploy.sh with another root account)
+blockchain/deployments/testnet.*.json

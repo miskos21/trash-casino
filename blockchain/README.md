@@ -234,10 +234,20 @@ The script does the following:
 4. Registers both NPCs with their tip limits.
 5. Adds the restricted keys: `agent_pay` for each NPC, and
    `create_game / settle_game / cancel_game` for the settler.
-6. Writes the public account IDs to `deployments/testnet.json`.
+6. Writes the public account IDs to `deployments/testnet.json`. If that file
+   belongs to another root account (the shared team deployment), it writes the
+   ignored `deployments/testnet.<root>.json` instead.
 
-Private keys stay in `~/.near-credentials`. Never commit them. Copy the settler and
-NPC function-call keys into the bridge environment (see [near-bridge](../near-bridge/README.md)).
+Private keys stay in `~/.near-credentials`. Never commit them. To put the settler and
+NPC function-call keys into `.env` for the bridge (see [near-bridge](../near-bridge/README.md)):
+
+```bash
+NEAR_ROOT_ACCOUNT=<name>.testnet ./scripts/env.sh ../.env
+```
+
+It sets the contract and account IDs, the three restricted keys, and a new
+`BRIDGE_TOKEN`, and never prints a key. Full-access keys are not read.
+Teammates deploy their own copy this way instead of sharing keys.
 
 `NEAR_NETWORK=sandbox` runs the same script against a local node, for a rehearsal.
 Any other network, including mainnet, is refused.

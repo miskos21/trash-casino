@@ -182,6 +182,11 @@ fi
 
 mkdir -p deployments
 OUT="deployments/$NETWORK.json"
+# deployments/testnet.json is the team's shared deployment and is committed. A
+# teammate's own copy goes to an ignored file so it never overwrites the shared one.
+if [[ -f "$OUT" && "$(jq -r '.owner // empty' "$OUT")" != "$ROOT" ]]; then
+  OUT="deployments/$NETWORK.$ROOT.json"
+fi
 jq -n --arg network "$NETWORK" --arg token "$TOKEN" --arg casino "$CASINO" \
   --arg owner "$ROOT" --arg settler "$SETTLER" --arg don "${AGENTS[0]}" --arg foxy "${AGENTS[1]}" \
   '{network: $network, token: $token, casino: $casino, owner: $owner, settler: $settler,
@@ -208,3 +213,4 @@ for account in "$SETTLER" "${AGENTS[@]}"; do
       done
 done
 echo "Full-access keys (~/.near-credentials/$NETWORK/<account>.json) stay with the team, not the server."
+echo "Write the chain block of .env with: NEAR_ROOT_ACCOUNT=$ROOT ./scripts/env.sh >> ../.env"
