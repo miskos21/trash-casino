@@ -61,6 +61,25 @@ export function useWallet() {
 
   useEffect(() => { if (session && config?.enabled) void refresh(session); }, [session?.sessionToken, config?.enabled]);
 
+  // Balances are read at "final" finality, which trails a just-confirmed transaction by a few blocks:
+  // read again shortly after so the new balance shows without a manual refresh.
+  const followUps = useRef<number[]>([]);
+  const refreshSoon = useCallback(async () => {
+    followUps.current.forEach(clearTimeout);
+    followUps.current = [2000, 5000, 10000].map((delay) => window.setTimeout(() => void refresh(), delay));
+    await refresh();
+  }, [refresh]);
+  useEffect(() => () => followUps.current.forEach(clearTimeout), []);
+
+  // Also refresh when the player comes back to the tab (for example after signing in a wallet window).
+  useEffect(() => {
+    if (!session || !config?.enabled) return;
+    const onVisible = () => { if (document.visibilityState === 'visible') void refresh(session); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => { document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
+  }, [session?.sessionToken, config?.enabled, refresh]);
+
   // Keep the casino balance visible and current: games take stakes and pay out without wallet popups.
   useEffect(() => {
     if (!session || !config?.enabled) return;
@@ -118,9 +137,9 @@ export function useWallet() {
   const report = useCallback(async (result: TxCheck, success: string) => {
     if (result.ok) setMessage({ kind: 'ok', text: success, txHash: result.txHash });
     else setMessage({ kind: 'error', text: result.error, txHash: result.txHash });
-    await refresh();
+    await refreshSoon();
     return result.ok;
-  }, [refresh]);
+  }, [refreshSoon]);
 
   const faucet = useCallback(async () => {
     if (!config?.tokenId) return false;
@@ -145,6 +164,6 @@ export function useWallet() {
   }, [config, call, report]);
 
   return { config, enabled: !!config?.enabled, session, accountId: session?.accountId ?? null, balances, busy, message,
-    connect, disconnect, refresh: () => refresh(), faucet, deposit, withdraw, dismiss: () => setMessage(null) };
+    connect, disconnect, refresh: () => refreshSoon(), faucet, deposit, withdraw, dismiss: () => setMessage(null) };
 }
 export type Wallet = ReturnType<typeof useWallet>;

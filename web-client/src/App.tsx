@@ -171,8 +171,11 @@ export function App() {
     {!inMatch && <div className="wallet-corner">
       {wallet.session ? <button className="balance-chip" onClick={() => openMenu('wallet')} title="Casino balance · wallet balance"
         aria-label={"Casino balance " + (wallet.balances ? formatTrash(wallet.balances.casino) : "unknown") + " TRASH. Open wallet"}>
-        <strong>{wallet.balances ? formatTrash(wallet.balances.casino) : "…"}</strong><span>TRASH in casino</span>
-        <small>wallet {wallet.balances ? formatTrash(wallet.balances.wallet) : "…"}</small></button>
+        <span className="trash-coin" aria-hidden="true" />
+        <span className="balance-text">
+          <span className="balance-main"><strong>{wallet.balances ? formatTrash(wallet.balances.casino) : "…"}</strong><span>TRASH in casino</span></span>
+          <small>Wallet {wallet.balances ? formatTrash(wallet.balances.wallet) : "…"} TRASH</small>
+        </span></button>
         : <button className="hud-button wallet-trigger" aria-haspopup="dialog" onClick={() => openMenu('wallet')}>
           <span className="trash-coin" aria-hidden="true" /><span>Wallet</span></button>}
     </div>}
@@ -190,7 +193,9 @@ export function App() {
           <button className="hud-button" aria-label="Close menu" onClick={() => setMenuOpen(false)}><GameIcon name="close" /></button>
         </div>
         {menuView === 'wallet' ? <>
-          <WalletPanel wallet={wallet} />
+          {/* The wallet picker is not in the browser's top layer, so a modal dialog would cover it: close the menu
+              while connecting and bring the wallet view back once the wallet is verified (or the attempt failed). */}
+          <WalletPanel wallet={wallet} onConnect={async () => { setMenuOpen(false); await wallet.connect(); openMenu('wallet'); }} />
           <button className="resume-button done-button" onClick={() => setMenuOpen(false)}>Done</button>
         </> : menuView === 'character' ? <>
           <div className="avatar-grid" role="group" aria-label="Animal avatar">

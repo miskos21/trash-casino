@@ -29,7 +29,7 @@ function AmountAction({ label, disabled, onSubmit }: { label: string; disabled: 
 }
 
 /** Wallet connection, test faucet, deposit, and withdrawal. NEAR Testnet only. */
-export function WalletPanel({ wallet }: { wallet: Wallet }) {
+export function WalletPanel({ wallet, onConnect = wallet.connect }: { wallet: Wallet; onConnect?: () => void }) {
   if (!wallet.config) return null;
   if (!wallet.enabled) return <section className="wallet-panel">
     <h2>Wallet · NEAR Testnet</h2>
@@ -42,14 +42,13 @@ export function WalletPanel({ wallet }: { wallet: Wallet }) {
     {!wallet.session ? <>
       <p className="free-play-note">Connect a NEAR testnet wallet and sign a login message to play Liar’s Dice for TRASH.
         Signing the message costs nothing and moves no funds.</p>
-      <button className="resume-button" disabled={busy} onClick={wallet.connect}>Connect wallet</button>
+      <button className="resume-button" disabled={busy} onClick={onConnect}>Connect wallet</button>
     </> : <>
       <div className="wallet-account"><span>{wallet.accountId}</span>
         <button className="link-button" onClick={wallet.disconnect}>Disconnect</button></div>
       <div className="wallet-balances">
         <div><small>In wallet</small><strong>{b ? formatTrash(b.wallet) : '…'} TRASH</strong></div>
         <div><small>In casino</small><strong>{b ? formatTrash(b.casino) : '…'} TRASH</strong></div>
-        <button className="link-button" disabled={busy} onClick={wallet.refresh} aria-label="Refresh balances">Refresh</button>
       </div>
       <button className="secondary-button" disabled={busy} onClick={wallet.faucet}>Get free test TRASH</button>
       <p className="wallet-fine-print">The test faucet mints TRASH to your wallet, at most once a minute. The first claim
