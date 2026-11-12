@@ -1,7 +1,9 @@
+import { useRef } from 'react';
 import type { BlackjackHand } from '@raccoon-royale/shared-schemas/types';
 import type { GameConnection } from '../services/useGameConnection';
 import { avatars } from '../avatars';
 import { useMatchNow } from '../game/MatchClock';
+import { useTurnKeys } from '../game/useTurnKeys';
 import { PlayingCard } from './PlayingCard';
 import { SeatPresence } from './SeatPresence';
 
@@ -20,9 +22,12 @@ const tallyLabel = ({ tally: t }: BlackjackHand) => t.wins + 'W ' + t.losses + '
 /** Free-play ranking only: wins minus losses over the shoe, then blackjacks. */
 const score = ({ tally: t }: BlackjackHand) => (t.wins - t.losses) * 100 + t.blackjacks;
 
-export function BlackjackHud({ connection: c, onMenu }: { connection: GameConnection; onMenu: () => void }) {
+export function BlackjackHud({ connection: c, onMenu, trash }: { connection: GameConnection; onMenu: () => void; trash?: string | null }) {
   const state = c.blackjack;
   const now = useMatchNow();
+  const hitButton = useRef<HTMLButtonElement>(null), standButton = useRef<HTMLButtonElement>(null);
+  const keysActive = !!c.room && !!state && state.handPhase === 'PLAYING' && state.currentPlayerId === c.room.youId && c.socket === 'online' && !c.pending;
+  useTurnKeys(keysActive, state?.revision, [hitButton, standButton]);
   if (!c.room || !state) return null;
   const finished = state.phase === 'FINISHED';
   const shuffling = state.handPhase === 'SHUFFLING';
@@ -62,8 +67,9 @@ export function BlackjackHud({ connection: c, onMenu }: { connection: GameConnec
     <section className={'match-actions blackjack-actions ' + (yourTurn ? 'is-your-turn' : '') + (finished ? 'is-finished' : '')}
       aria-label="Blackjack actions" data-turn={finished ? 'finished' : shuffling ? 'shuffling' : result ? 'result' : yourTurn ? 'yours' : 'waiting'}>
       <div className="action-turn-line">
-        {c.socket !== 'online' ? <strong>Reconnecting…</strong> : c.pending ? <strong>Sending…</strong> : null}
-        {!finished && <span className={seconds <= 8 && !result ? 'urgent-clock' : ''}>{result ? 'Dealing in ' + seconds + 's' : seconds + 's'}</span>}
+        {!finished && <span className={'turn-timer ' + (seconds <= 5 && !result ? 'urgent-clock' : '')} aria-label={seconds + ' seconds ' + (result ? 'until the deal' : 'left')}>
+          <strong>{seconds}</strong><small>{result ? 'next deal' : yourTurn ? 'your turn' : 'seconds'}</small></span>}
+        {c.socket !== 'online' ? <em>Reconnecting…</em> : c.pending ? <em>Sending…</em> : null}
       </div>
       {!shuffling && <><div className="card-row" aria-label="Dealer hand">
         <small>Dealer · {state.dealer.total}</small>
@@ -83,11 +89,12 @@ export function BlackjackHud({ connection: c, onMenu }: { connection: GameConnec
         <button className="resume-button" onClick={onMenu}>Back to lobby</button>
       </> : !result && <>
         <div className="blackjack-controls">
-          <button className="resume-button" disabled={!enabled} onClick={() => send('BLACKJACK_HIT')}>Hit</button>
-          <button className="secondary-button" disabled={!enabled} onClick={() => send('BLACKJACK_STAND')}>Stand</button>
+          <button ref={hitButton} className="resume-button" disabled={!enabled} onClick={() => send('BLACKJACK_HIT')}>Hit</button>
+          <button ref={standButton} className="secondary-button" disabled={!enabled} onClick={() => send('BLACKJACK_STAND')}>Stand</button>
         </div>
       </>}
       {c.error && <p className="room-error" role="alert">{c.error}</p>}
+      {c.room.economy && trash && <div className="strip-trash"><span className="trash-coin" aria-hidden="true" /><strong>{trash}</strong><small>TRASH in casino</small></div>}
     </section>
   </>;
 }

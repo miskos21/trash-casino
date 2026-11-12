@@ -14,10 +14,11 @@ test('four seats keep dice separate from cups and show a consistent public revea
   const peers: { socket: WebSocket; messages: { type: string; payload: any }[]; send: (type: string, payload: unknown) => void }[] = [];
   try {
     await page.goto('/');
+    await page.getByLabel('Your name').fill('Host');
     await page.getByRole('button', { name: /^Choose character/ }).click();
     await page.getByRole('button', { name: 'Frog', exact: true }).click();
-    await page.getByRole('button', { name: 'Choose a game' }).click();
-    await page.getByLabel('Player name').fill('Host');
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
     await page.getByRole('button', { name: 'Liar’s Dice', exact: true }).click(); // Blackjack is the default.
     await page.getByRole('button', { name: 'Create room', exact: true }).click();
     const roomCode = await page.getByLabel('Room code', { exact: true }).textContent();
@@ -66,7 +67,8 @@ test('four seats keep dice separate from cups and show a consistent public revea
     await expect(page.locator('[data-event-type="BID"]').first()).toContainText('Host');
     await expect(page.locator('[data-event-type="ROUND_RESULT"]')).toHaveCount(1);
     expect(errors).toEqual([]);
-    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings' }).click(); // In a match, the room menu is under Settings.
+    await page.getByRole('menuitem', { name: 'Room & players' }).click();
     await page.getByRole('button', { name: 'Leave match', exact: true }).click();
     for (const peer of peers) {
       const roomId = peer.messages.find((m) => m.type === 'ROOM_SESSION')!.payload.roomId;

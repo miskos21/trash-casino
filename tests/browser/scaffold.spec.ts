@@ -4,7 +4,7 @@ test('fills the viewport, orbits the table, and selects a real portrait through 
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  await expect(page.locator('.connection-indicator')).toHaveAttribute('data-connection', 'online');
+  await expect(page.locator('.game-shell')).toHaveAttribute('data-connection', 'online');
   await expect(page.locator('canvas')).toBeVisible();
   await expect(page.getByRole('dialog')).not.toBeVisible();
   // R3F sizes the canvas after its first ResizeObserver callback.
@@ -44,9 +44,11 @@ test('fills the viewport, orbits the table, and selects a real portrait through 
   await menu.getByRole('button', { name: 'Frog', exact: true }).click();
   await expect(menu.getByRole('button', { name: 'Frog', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(menu.getByRole('button', { name: 'Raccoon', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await expect(menu.getByRole('button', { name: 'Create room', exact: true })).toHaveCount(0);
-  await menu.getByRole('button', { name: 'Choose a game' }).click();
-  await expect(menu.getByText('Playing as')).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Create room', exact: true })).toHaveCount(0); // Character window: animals and Done only.
+  await menu.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(menu).not.toBeVisible();
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(menu.getByRole('button', { name: 'Change character' })).toHaveCount(0); // Character is chosen before Play.
   await expect(menu.getByRole('button', { name: 'Create room', exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('menu.png') });
   await menu.getByRole('button', { name: 'Back to table' }).click();
@@ -66,7 +68,7 @@ test('fills the viewport, orbits the table, and selects a real portrait through 
 
 test('keeps actual connection status and retry inside the menu', async ({ page, context }) => {
   await page.goto('/');
-  await expect(page.locator('.connection-indicator')).toHaveAttribute('data-connection', 'online');
+  await expect(page.locator('.game-shell')).toHaveAttribute('data-connection', 'online');
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await page.getByText('Connection', { exact: true }).click();
   await expect(page.locator('[data-status="online"]')).toHaveCount(2);

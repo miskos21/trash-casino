@@ -5,12 +5,12 @@ test('a guest plays Blackjack hands from one shoe with two agents against the ho
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
+  await page.getByLabel('Your name').fill('Card Shark');
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   // Blackjack and one agent (Don) are the defaults.
   await expect(page.getByRole('button', { name: 'Blackjack', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: '1 agent', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: '2 agents', exact: true }).click();
-  await page.getByLabel('Player name', { exact: true }).fill('Card Shark');
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
   await expect(page.locator('.room-code-line small')).toHaveText('Free play · Blackjack');
   await expect(page.locator('.lobby-seats li')).toHaveCount(3);
@@ -21,7 +21,7 @@ test('a guest plays Blackjack hands from one shoe with two agents against the ho
 
   const actions = page.getByRole('region', { name: 'Blackjack actions' });
   await expect(actions).toBeVisible();
-  await expect(page.locator('.die-face')).toHaveCount(0);
+  await expect(actions.locator('.die-face')).toHaveCount(0); // No dice in the Blackjack HUD.
   // Casino shoe: the dealer shuffles and burns a card before the first deal; the fingerprint is published first.
   await expect(actions).toHaveAttribute('data-turn', 'shuffling');
   await expect(page.locator('.match-heading small')).toHaveText('BLACKJACK');
@@ -51,7 +51,8 @@ test('a guest plays Blackjack hands from one shoe with two agents against the ho
   await expect(page.getByRole('button', { name: 'Back to lobby', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Your hand').getByRole('img')).toHaveCount(2);
   expect(await page.locator('.shoe-fingerprint').getAttribute('title')).toBe(fingerprint); // Same shoe, same commitment.
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings' }).click(); // In a match, the room menu is under Settings.
+    await page.getByRole('menuitem', { name: 'Room & players' }).click();
   await page.getByText('Card verification', { exact: true }).click();
   await expect(page.locator('.shoe-fingerprint')).toBeVisible();
   await page.getByRole('button', { name: 'Back to table', exact: true }).click();

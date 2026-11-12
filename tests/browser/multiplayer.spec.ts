@@ -5,10 +5,11 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
+  await page.getByLabel('Your name').fill('Host');
   await page.getByRole('button', { name: /^Choose character/ }).click();
   await page.getByRole('button', { name: 'Capybara', exact: true }).click();
-  await page.getByRole('button', { name: 'Choose a game' }).click();
-  await page.getByLabel('Player name', { exact: true }).fill('Host');
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
   await page.getByRole('button', { name: 'Liar’s Dice', exact: true }).click(); // Blackjack is the default.
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
   const code = await page.getByLabel('Room code', { exact: true }).textContent();
@@ -17,8 +18,8 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   const guest = await context.newPage();
   guest.on('pageerror', (e) => errors.push(e.message));
   await guest.goto('/');
+  await guest.getByLabel('Your name').fill('Guest');
   await guest.getByRole('button', { name: 'Play', exact: true }).click();
-  await guest.getByLabel('Player name', { exact: true }).fill('Guest');
   await guest.getByLabel('Room code to join').fill(code!);
   await guest.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(guest.getByLabel('Room code', { exact: true })).toHaveText(code!);
@@ -33,7 +34,8 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   await expect(page.getByLabel('Game actions')).toHaveAttribute('data-turn', 'yours');
   await expect(guest.getByLabel('Game actions')).toHaveAttribute('data-turn', 'waiting');
   await expect(page.locator('.match-mode-footer, .claim-explanation')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings' }).click(); // In a match, the room menu is under Settings.
+    await page.getByRole('menuitem', { name: 'Room & players' }).click();
   await page.getByRole('button', { name: 'How to play', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'How Liar’s Dice works' })).toBeVisible();
   await expect(page.getByText(/No buy-in, no tokens at risk, no token reward/)).toBeVisible();
@@ -90,7 +92,8 @@ test('two browser players join one table with an NPC, reconnect, and finish a fu
   await page.screenshot({ path: testInfo.outputPath('match-result.png') });
   expect(errors).toEqual([]);
   for (const actor of [page, guest]) {
-    await actor.getByRole('button', { name: 'Open menu', exact: true }).click();
+    await actor.getByRole('button', { name: 'Settings' }).click(); // In a match, the room menu is under Settings.
+    await actor.getByRole('menuitem', { name: 'Room & players' }).click();
     await actor.getByRole('button', { name: 'Leave room', exact: true }).click();
   }
 });

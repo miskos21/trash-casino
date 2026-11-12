@@ -541,3 +541,310 @@ button:disabled { opacity: 0.45; }
   .character-chip strong { font-size: 16px; }
   .character-chip .portrait { width: 36px; height: 36px; }
 }
+
+/* Play window: game tiles, agents, room, then Ready and Start; the wallet sits beside it. */
+.play-columns { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+.play-step { margin: 18px 0 9px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #d9bd86; }
+.play-window > .play-step:first-child { margin-top: 0; }
+.game-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.game-tile { display: grid; justify-items: center; gap: 6px; padding: 16px 14px 14px; border: 1px solid var(--panel-line); border-radius: 14px;
+  background: #26272b; color: #e8e2d2; font: inherit; cursor: pointer; text-align: center; transition: border-color 150ms, background-color 150ms, transform 150ms; }
+.game-tile:hover:not(:disabled) { border-color: #d6b47b; transform: translateY(-1px); }
+.game-tile.selected { border: 2px solid #e0bd76; background: #34312a; box-shadow: 0 0 0 3px #e0bd7622; }
+.game-tile:disabled:not(.selected) { opacity: 0.35; cursor: default; }
+.game-tile strong { font: normal 22px Georgia, serif; color: #f5e6c0; }
+.game-tile small { font-size: 13px; color: #b9bbc2; line-height: 1.4; }
+.game-tile-picture { display: flex; align-items: center; justify-content: center; gap: 8px; height: 96px; width: 100%; border-radius: 10px;
+  background: radial-gradient(ellipse at center, #3f6152 0%, #2b4339 70%); margin-bottom: 6px; }
+.game-tile-picture .die-face { width: 46px; height: 46px; padding: 7px; }
+.game-tile-picture .die-face:nth-child(1) { transform: rotate(-9deg); }
+.game-tile-picture .die-face:nth-child(3) { transform: rotate(8deg); }
+.game-tile-picture .playing-card { width: 60px; height: 84px; }
+.game-tile-picture .playing-card:first-child { transform: rotate(-8deg) translateX(8px); }
+.game-tile-picture .playing-card:last-child { transform: rotate(7deg) translateX(-8px); }
+.create-room-button { min-height: 56px; font-size: 17px; }
+.play-window .join-row { margin-top: 10px; }
+.start-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px; padding: 16px 0 6px; border-top: 1px solid var(--panel-line);
+  position: sticky; bottom: 0; z-index: 2; padding-bottom: 14px; background: var(--panel-solid); box-shadow: 0 -14px 18px var(--panel-solid); }
+/* Ready and Start stay pinned to the window's bottom edge while the rest scrolls. */
+.start-row button { min-height: 58px; font-size: 17px; }
+.start-hint { margin: 8px 0 0; font-size: 13px; color: #a3a6ad; text-align: center; }
+.current-character label { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.current-character input { width: 100%; max-width: 260px; padding: 6px 9px; border: 1px solid #ffffff1f; border-radius: 6px; background: #1c1d20;
+  color: #f0e2bd; font: 600 18px ui-sans-serif, system-ui, sans-serif; }
+.current-animal { font-size: 14px; color: #c5c7cc; white-space: nowrap; }
+/* Home screen name field next to your animal. */
+.home-name { pointer-events: auto; display: flex; align-items: center; gap: 8px; min-height: 54px; padding: 0 6px 0 12px;
+  border: 1px solid var(--panel-line); border-radius: 11px; background: #1d1e21e6; backdrop-filter: blur(12px); }
+.home-name span { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #a3a6ad; }
+.home-name input { width: 150px; padding: 8px 10px; border: 1px solid transparent; border-radius: 7px; background: #26272b; color: #f0e2bd;
+  font: 600 16px ui-sans-serif, system-ui, sans-serif; }
+.home-name input:focus { outline: none; border-color: #d6b47b; }
+@media (max-width: 800px) {
+  .play-columns { grid-template-columns: 1fr; }
+  .game-tiles { gap: 10px; }
+  .game-tile-picture { height: 88px; }
+  .game-tile-picture .die-face { width: 34px; height: 34px; padding: 5px; }
+  .game-tile-picture .playing-card { width: 46px; height: 64px; }
+  .game-tile strong { font-size: 18px; }
+  .game-tile small { display: none; }
+  .home-name span { display: none; }
+  .home-name { padding: 0 5px; min-height: 46px; }
+  .home-name input { width: 96px; font-size: 14px; }
+  .current-animal { display: none; }
+  .current-character { flex-wrap: wrap; }
+  .current-character label { flex: 1 1 calc(100% - 70px); }
+  .current-character input { max-width: none; }
+  .current-character .secondary-button { margin-left: 0; width: 100%; }
+}
+
+/* The Play window is one column; wallet and TRASH have their own window. */
+.game-menu.game-view { width: min(820px, calc(100vw - 32px)); }
+.game-menu.wallet-view { width: min(620px, calc(100vw - 32px)); }
+.game-menu.wallet-view .wallet-panel { margin-top: 0; padding-top: 0; border-top: 0; margin-bottom: 22px; }
+.trash-coin { display: inline-block; width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 35% 35%, #f3d68f, #b88a3c); box-shadow: inset 0 0 0 2px #8e6a2c; }
+.wallet-trigger { gap: 8px; }
+.wallet-link { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 10px; padding: 11px 14px; border: 1px dashed var(--panel-line);
+  border-radius: 10px; background: transparent; color: #d9bd86; font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.wallet-link > span:last-child { margin-left: auto; font-size: 18px; }
+.wallet-link:hover { border-style: solid; background: #26272b; }
+.link-button { border: 0; padding: 0; background: none; color: #f0d9a6; font: inherit; text-decoration: underline; cursor: pointer; }
+@media (max-width: 800px) { .wallet-trigger > span:last-child { display: none; } }
+
+/* Wallet corner (bottom left), and lean character / wallet windows that only hold their content and Done. */
+.wallet-corner { position: absolute; z-index: 11; left: 20px; bottom: max(20px, env(safe-area-inset-bottom)); }
+.wallet-corner .wallet-trigger { min-height: 52px; padding: 0 18px 0 14px; border: 1px solid var(--panel-line); background: #1d1e21e6; backdrop-filter: blur(12px); font-size: 15px; }
+.wallet-corner .trash-coin { width: 20px; height: 20px; }
+.game-menu.character-view { width: min(640px, calc(100vw - 32px)); }
+.game-menu.character-view .avatar-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+.game-menu.character-view .avatar-button { font-size: 16px; padding: 8px 8px 12px; }
+.done-button { margin-top: 4px; min-height: 52px; font-size: 16px; }
+@media (max-width: 800px) {
+  .wallet-corner { left: 14px; bottom: 122px; }
+  .wallet-corner .wallet-trigger > span:last-child { display: none; }
+  .wallet-corner .wallet-trigger { padding: 0 14px; }
+  .game-shell:has(.match-actions) .wallet-corner { display: none; } /* The match panel needs the space. */
+}
+.room-lobby.play-window { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* Home: name field stacked above the character button, same width. */
+.identity-stack { display: flex; align-items: stretch; gap: 10px; pointer-events: auto; }
+.game-header, .game-header .header-actions { align-items: flex-start; }
+.identity-stack .home-name input { width: 170px; }
+/* Name left of the character button; the button's arrow sits at its right edge. */
+.character-chip { min-width: 230px; }
+.character-chip svg { margin-left: auto; }
+@media (max-width: 800px) {
+  .identity-stack { gap: 6px; }
+  .identity-stack .home-name input { width: 92px; }
+  .character-chip { min-width: 0; }
+  .character-chip strong { display: none; }
+}
+
+/* "How to play": Tailwind's reset removes dialog margins, so centre it explicitly and give the content room. */
+.rules-dialog { margin: auto; width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); background: var(--panel-solid, #1f2023);
+  border-color: #b9a27a80; box-shadow: 0 24px 80px #000a; }
+.rules-content { display: grid; gap: 18px; padding: 30px 34px 28px; }
+.rules-heading h2 { font-size: 28px; }
+.free-match-explainer { margin: 0; padding: 14px 16px; border-radius: 0 8px 8px 0; font-size: 14px; line-height: 1.6; }
+.free-match-explainer strong { margin-bottom: 4px; }
+.rules-content ol { display: grid; gap: 10px; margin: 0; padding-left: 22px; font-size: 15px; line-height: 1.6; }
+.rules-content li { padding: 0 0 0 6px; }
+.rules-content > p:not(.free-match-explainer) { margin: 0; font-size: 13px; line-height: 1.6; }
+.rules-content .resume-button { margin-top: 4px; }
+.play-rules { margin-top: 6px; }
+@media (max-width: 800px) { .rules-content { padding: 22px 20px; gap: 14px; } .rules-content ol { font-size: 14px; } }
+
+/* ---------------------------------------------------------------------------------------------
+   In-match layout: players panel on the left and chat on the right run from the top edge down to a compact,
+   full-width control strip. Title, camera buttons, and Settings share the top of the middle column.
+   --------------------------------------------------------------------------------------------- */
+.play-bar { display: flex; align-items: center; gap: 2px; padding: 5px; border: 1px solid var(--panel-line); border-radius: 12px;
+  background: #1d1e21e6; backdrop-filter: blur(12px); pointer-events: auto; }
+.play-bar-camera { display: flex; gap: 2px; }
+.play-bar .camera-button > span { display: none; }
+.play-bar .hud-button { min-width: 42px; min-height: 42px; padding: 0; }
+.settings { position: relative; }
+.settings-scrim { position: fixed; inset: 0; z-index: 40; }
+.settings-menu { position: absolute; z-index: 41; top: calc(100% + 10px); right: 0; display: grid; gap: 6px; width: 240px; padding: 10px;
+  border: 1px solid var(--panel-line); border-radius: 12px; background: var(--panel-solid); box-shadow: 0 18px 50px #000a; }
+.settings-menu > button { min-height: 46px; padding: 0 14px; border: 1px solid #ffffff14; border-radius: 8px; background: #26272b; color: #e8e2d2;
+  font: inherit; font-size: 15px; text-align: left; justify-content: flex-start; }
+.settings-menu > button:hover:not(:disabled) { background: #303135; }
+.settings-menu > .leave-button { width: 100%; color: #f2a196; background: #2b2122; border-color: #6b3a35; }
+.settings-menu > .leave-button:hover:not(:disabled) { background: #3a2626; }
+
+@media (min-width: 801px) {
+  .game-shell[data-in-match="true"] { --gap: 14px; --strip-h: 158px; --side-w: clamp(280px, 22vw, 360px); --chat-w: clamp(320px, 25vw, 420px); --bar-w: 196px; }
+  .game-shell[data-in-match="true"]:has(.blackjack-actions) { --strip-h: 190px; }
+  .game-shell[data-in-match="true"] .game-brand, .game-shell[data-in-match="true"] .camera-hint { display: none; }
+
+  /* Top of the middle column: title centred, camera and Settings at its right. */
+  .game-shell[data-in-match="true"] .game-header { top: var(--gap); left: calc(var(--side-w) + 2 * var(--gap)); right: calc(var(--chat-w) + 2 * var(--gap)); justify-content: flex-end; }
+  .game-shell[data-in-match="true"] .match-heading { top: var(--gap); left: calc(var(--side-w) + 2 * var(--gap)); right: calc(var(--chat-w) + 3 * var(--gap) + var(--bar-w));
+    width: auto; max-width: 460px; margin: 0 auto; transform: none; padding: 10px 18px; }
+  .game-shell[data-in-match="true"] .match-heading h2 { font-size: 28px; }
+
+  /* Left: players and the move history. Right: chat with the agents. Both reach the top edge. */
+  .game-shell[data-in-match="true"] .match-seats { top: var(--gap); bottom: calc(var(--strip-h) + 2 * var(--gap)); left: var(--gap); width: var(--side-w);
+    overflow-y: auto; padding: 12px; border: 1px solid var(--panel-line); border-radius: 14px; background: var(--panel); pointer-events: auto; }
+  .game-shell[data-in-match="true"] .match-seats .player-card { background: #26272b; }
+  .match-seats .table-activity { position: static; width: auto; max-height: none; margin-top: 12px; padding: 10px 0 0; border: 0;
+    border-top: 1px solid var(--panel-line); border-radius: 0; background: transparent; }
+  .game-shell[data-in-match="true"] .table-chat { top: var(--gap); bottom: calc(var(--strip-h) + 2 * var(--gap)); right: var(--gap); width: var(--chat-w); max-height: none; }
+
+  /* Bottom: one compact row in three sections — the claim or dealer, your dice or hand, and your controls. */
+  .game-shell[data-in-match="true"] .match-actions { left: var(--gap); right: var(--gap); bottom: var(--gap); width: auto; transform: none; height: var(--strip-h);
+    overflow: hidden; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.15fr); grid-template-rows: 1fr; column-gap: 0;
+    align-items: center; padding: 0 22px; border-radius: 16px; }
+  .game-shell[data-in-match="true"] .match-actions.is-your-turn { padding: 0 21px; }
+  .game-shell[data-in-match="true"] .match-actions > * { grid-row: 1; }
+  .game-shell[data-in-match="true"] .match-actions > :nth-child(n+3) { border-left: 1px solid var(--panel-line); }
+  .game-shell[data-in-match="true"] .match-actions > .action-turn-line { position: absolute; top: 10px; right: 18px; border: 0; padding: 0; z-index: 1; }
+  .game-shell[data-in-match="true"] .match-actions > .action-turn-line > span { padding: 3px 9px; border-radius: 10px; background: #2c2d31; font-size: 12px; }
+  .game-shell[data-in-match="true"] .match-actions > .current-claim { grid-column: 1; min-height: 0; padding: 0 24px 0 4px; }
+  .game-shell[data-in-match="true"] .match-actions > .private-dice { grid-column: 2; padding: 0 28px; }
+  .game-shell[data-in-match="true"] .match-actions > .bid-controls { grid-column: 3; padding: 0 0 0 28px; grid-template-columns: 112px 86px 1fr 1fr; }
+  .game-shell[data-in-match="true"] .bid-controls label { white-space: nowrap; }
+  .game-shell[data-in-match="true"] .match-actions > .resume-button { grid-column: 3; margin-left: 28px; width: auto; }
+  .game-shell[data-in-match="true"] .match-actions > .end-match-button { position: absolute; top: 9px; right: 74px; bottom: auto; margin: 0; border-left: 1px solid #c4ab7266; padding: 4px 10px; font-size: 12px; }
+  .game-shell[data-in-match="true"] .match-actions > .room-error { position: absolute; left: 22px; bottom: 6px; margin: 0; border: 0; }
+  .game-shell[data-in-match="true"] .private-dice .die-face { width: 54px; height: 54px; padding: 9px; }
+  .game-shell[data-in-match="true"] .private-dice > div { min-height: 56px; gap: 8px; }
+  .game-shell[data-in-match="true"] .current-claim strong { font-size: 24px; }
+  .game-shell[data-in-match="true"] .bid-controls input, .game-shell[data-in-match="true"] .bid-controls select { min-height: 48px; font-size: 18px; }
+  .game-shell[data-in-match="true"] .bid-controls .resume-button, .game-shell[data-in-match="true"] .bid-controls .secondary-button { min-height: 48px; font-size: 16px; }
+  .game-shell[data-in-match="true"] .blackjack-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.85fr); }
+  .game-shell[data-in-match="true"] .blackjack-actions > .card-row { padding: 0 24px; }
+  .game-shell[data-in-match="true"] .blackjack-actions > .card-row[aria-label="Dealer hand"] { grid-column: 1; padding-left: 4px; border-left: 0; }
+  .game-shell[data-in-match="true"] .blackjack-actions > .card-row[aria-label="Your hand"] { grid-column: 2; }
+  .game-shell[data-in-match="true"] .blackjack-actions > .blackjack-controls,
+  .game-shell[data-in-match="true"] .blackjack-actions > .shoe-standings { grid-column: 3; padding-left: 24px; }
+  .game-shell[data-in-match="true"] .blackjack-actions > .shoe-standings { align-self: stretch; overflow-y: auto; padding-top: 12px; }
+  .game-shell[data-in-match="true"] .blackjack-actions > .claim-explanation { display: none; }
+  .game-shell[data-in-match="true"] .blackjack-controls button { min-height: 52px; }
+  .game-shell[data-in-match="true"] .card-row[aria-label="Your hand"] .playing-card { width: 94px; height: 132px; }
+  .game-shell[data-in-match="true"] .card-row[aria-label="Dealer hand"] .playing-card { width: 74px; height: 104px; }
+}
+@media (max-width: 800px) {
+  .game-shell[data-in-match="true"] .game-brand { display: none; }
+  .play-bar-camera { display: none; }
+  .match-seats { flex-wrap: wrap; }
+  .match-seats .table-activity { flex-basis: 100%; }
+}
+
+/* Control strip, compact: big timer | claim or dealer | your dice or hand | stacked actions | TRASH (paid rooms). */
+.turn-timer { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 86px; height: 86px; border-radius: 50%;
+  border: 3px solid #d9bd86; background: #26272b; color: #f5e6c0; line-height: 1; }
+.turn-timer strong { font: 700 36px ui-sans-serif, system-ui, sans-serif; }
+.turn-timer small { margin-top: 3px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #b9bbc2; }
+.turn-timer.urgent-clock { border-color: #ff8f6b; color: #ffb39b; box-shadow: 0 0 0 4px #ff8f6b2e; }
+@media (prefers-reduced-motion: no-preference) { .turn-timer.urgent-clock { animation: timer-pulse 1s ease-in-out infinite; } }
+@keyframes timer-pulse { 50% { box-shadow: 0 0 0 8px #ff8f6b14; } }
+.action-turn-line em { font-style: normal; font-size: 11px; color: #e6c98a; }
+.action-stack { display: grid; gap: 6px; }
+.blackjack-controls { grid-template-columns: 1fr; gap: 6px; }
+.key-hint { font-size: 11px; color: #9a9ca3; }
+.bid-controls label.next-key { color: #f0d9a6; }
+.bid-controls label.next-key input, .bid-controls label.next-key select { border-color: #d9bd86; box-shadow: 0 0 0 2px #d9bd8633; }
+.strip-trash { display: grid; justify-items: center; gap: 2px; padding: 0 6px 0 24px; }
+.strip-trash .trash-coin { width: 26px; height: 26px; }
+.strip-trash strong { font-size: 22px; color: #f5ddb1; }
+.strip-trash small { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #a3a6ad; }
+
+@media (min-width: 801px) {
+  .game-shell[data-in-match="true"] { --strip-h: 128px; }
+  .game-shell[data-in-match="true"]:has(.blackjack-actions) { --strip-h: 150px; }
+  .game-shell[data-in-match="true"] .match-actions { grid-template-columns: 104px minmax(0, 1fr) auto auto auto; padding: 0 22px 0 14px; }
+  .game-shell[data-in-match="true"] .match-actions.is-your-turn { padding: 0 21px 0 13px; }
+  .game-shell[data-in-match="true"] .match-actions > .action-turn-line { position: static; grid-column: 1; display: grid; justify-items: center; gap: 4px; }
+  .game-shell[data-in-match="true"] .match-actions > .action-turn-line > span { padding: 0; background: #26272b; font-size: inherit; }
+  .game-shell[data-in-match="true"] .match-actions > :nth-child(n+3) { border-left: 1px solid var(--panel-line); }
+  .game-shell[data-in-match="true"] .match-actions > .current-claim { grid-column: 2; padding: 0 22px; border-left: 1px solid var(--panel-line); }
+  .game-shell[data-in-match="true"] .match-actions > .private-dice { grid-column: 3; padding: 0 24px; }
+  .game-shell[data-in-match="true"] .match-actions > .bid-controls { grid-column: 4; padding: 0 0 0 24px; grid-template-columns: 96px 80px 160px; grid-template-rows: auto auto;
+    column-gap: 10px; row-gap: 4px; align-items: end; }
+  .game-shell[data-in-match="true"] .bid-controls > label:nth-of-type(1) { grid-column: 1; grid-row: 1; }
+  .game-shell[data-in-match="true"] .bid-controls > label:nth-of-type(2) { grid-column: 2; grid-row: 1; }
+  .game-shell[data-in-match="true"] .bid-controls > .key-hint { grid-column: 1 / 3; grid-row: 2; align-self: start; }
+  .game-shell[data-in-match="true"] .bid-controls > .action-stack { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+  .game-shell[data-in-match="true"] .bid-controls input, .game-shell[data-in-match="true"] .bid-controls select { min-height: 44px; font-size: 18px; }
+  .game-shell[data-in-match="true"] .action-stack button, .game-shell[data-in-match="true"] .blackjack-controls button { min-height: 42px; font-size: 15px; }
+  .game-shell[data-in-match="true"] .match-actions > .strip-trash { grid-column: 5; }
+  .game-shell[data-in-match="true"] .match-actions > .end-match-button { top: 8px; right: 14px; }
+  .game-shell[data-in-match="true"] .private-dice .die-face { width: 50px; height: 50px; padding: 8px; }
+  .game-shell[data-in-match="true"] .private-dice > div { min-height: 52px; }
+  .game-shell[data-in-match="true"] .current-claim strong { font-size: 22px; }
+  .game-shell[data-in-match="true"] .blackjack-actions { grid-template-columns: 104px minmax(0, 1fr) minmax(0, 1fr) 190px auto; }
+  .game-shell[data-in-match="true"] .blackjack-actions > .card-row[aria-label="Dealer hand"] { grid-column: 2; padding-left: 22px; border-left: 1px solid var(--panel-line); }
+  .game-shell[data-in-match="true"] .blackjack-actions > .card-row[aria-label="Your hand"] { grid-column: 3; }
+  .game-shell[data-in-match="true"] .blackjack-actions > .blackjack-controls,
+  .game-shell[data-in-match="true"] .blackjack-actions > .shoe-standings { grid-column: 4; }
+  .game-shell[data-in-match="true"] .blackjack-actions > .strip-trash { grid-column: 5; }
+  .game-shell[data-in-match="true"] .card-row[aria-label="Your hand"] .playing-card { width: 80px; height: 112px; }
+  .game-shell[data-in-match="true"] .card-row[aria-label="Dealer hand"] .playing-card { width: 66px; height: 92px; }
+  .game-shell[data-in-match="true"] .card-row > small { font-size: 12px; }
+}
+@media (min-width: 801px) { .game-shell[data-in-match="true"] .match-actions > .resume-button { grid-column: 4; margin-left: 24px; } }
+@media (min-width: 801px) {
+  /* Sections fill the strip's height so their dividers run top to bottom; the timer stays round. */
+  .game-shell[data-in-match="true"] .match-actions > .action-turn-line > .turn-timer { border-radius: 50%; padding: 0; }
+  .game-shell[data-in-match="true"] .match-actions > :is(.current-claim, .private-dice, .card-row, .strip-trash) {
+    align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+  .game-shell[data-in-match="true"] .match-actions > :is(.bid-controls, .blackjack-controls, .shoe-standings) { align-self: stretch; align-content: center; }
+  .game-shell[data-in-match="true"] .match-actions > .current-claim { align-items: flex-start; }
+}
+
+/* Layout v3: chat runs the full height on the right; the strip and the title stop at it. Camera and Settings sit
+   top left above the players panel. The timer is a square tile that turns red for the last five seconds. */
+.turn-timer, .game-shell[data-in-match="true"] .match-actions > .action-turn-line > .turn-timer { border-radius: 14px; }
+@media (min-width: 801px) {
+  .game-shell[data-in-match="true"] { --bar-h: 54px; }
+  .game-shell[data-in-match="true"] .game-header { left: var(--gap); right: auto; width: var(--side-w); justify-content: flex-start; }
+  .game-shell[data-in-match="true"] .play-bar { width: 100%; justify-content: space-between; }
+  .game-shell[data-in-match="true"] .settings-menu { left: auto; right: 0; }
+  .game-shell[data-in-match="true"] .match-seats { top: calc(2 * var(--gap) + var(--bar-h)); }
+  .game-shell[data-in-match="true"] .match-heading { right: calc(var(--chat-w) + 2 * var(--gap)); }
+  .game-shell[data-in-match="true"] .table-chat { bottom: var(--gap); }
+  .game-shell[data-in-match="true"] .match-actions { right: calc(var(--chat-w) + 2 * var(--gap)); }
+  /* The strip is narrower now: slightly smaller dice and controls so the claim keeps room. */
+  .game-shell[data-in-match="true"] .match-actions { grid-template-columns: 100px minmax(0, 1fr) auto auto auto; }
+  .game-shell[data-in-match="true"] .private-dice .die-face { width: 46px; height: 46px; padding: 7px; }
+  .game-shell[data-in-match="true"] .match-actions > .private-dice { padding: 0 18px; }
+  .game-shell[data-in-match="true"] .match-actions > .bid-controls { padding-left: 18px; grid-template-columns: 90px 76px 148px; }
+  .game-shell[data-in-match="true"] .match-actions > .current-claim { padding: 0 16px; }
+  .game-shell[data-in-match="true"] .current-claim strong { font-size: 20px; flex-wrap: wrap; }
+  .game-shell[data-in-match="true"] .blackjack-actions { grid-template-columns: 100px minmax(0, 1fr) minmax(0, 1fr) 170px auto; }
+}
+
+/* Taller, more readable strip. */
+@media (min-width: 801px) {
+  .game-shell[data-in-match="true"] { --strip-h: 172px; }
+  .game-shell[data-in-match="true"]:has(.blackjack-actions) { --strip-h: 204px; }
+  .game-shell[data-in-match="true"] .match-actions { grid-template-columns: 116px minmax(0, 1fr) auto auto auto; }
+  .game-shell[data-in-match="true"] .match-actions > .action-turn-line > .turn-timer { width: 100px; height: 100px; }
+  .game-shell[data-in-match="true"] .turn-timer strong { font-size: 44px; }
+  .game-shell[data-in-match="true"] .turn-timer small { font-size: 11px; }
+  .game-shell[data-in-match="true"] .private-dice .die-face { width: 58px; height: 58px; padding: 9px; }
+  .game-shell[data-in-match="true"] .private-dice > small, .game-shell[data-in-match="true"] .card-row > small,
+  .game-shell[data-in-match="true"] .current-claim small { font-size: 13px; }
+  .game-shell[data-in-match="true"] .current-claim strong { font-size: 24px; }
+  .game-shell[data-in-match="true"] .current-claim .die-symbol { width: 34px; height: 34px; padding: 6px; }
+  .game-shell[data-in-match="true"] .current-claim p { font-size: 15px; }
+  .game-shell[data-in-match="true"] .match-actions > .bid-controls { grid-template-columns: 96px 82px 160px; }
+  .game-shell[data-in-match="true"] .bid-controls label { font-size: 13px; }
+  .game-shell[data-in-match="true"] .bid-controls input, .game-shell[data-in-match="true"] .bid-controls select { min-height: 52px; font-size: 20px; }
+  .game-shell[data-in-match="true"] .action-stack button, .game-shell[data-in-match="true"] .blackjack-controls button { min-height: 52px; font-size: 17px; }
+  .game-shell[data-in-match="true"] .action-stack, .game-shell[data-in-match="true"] .blackjack-controls { gap: 8px; }
+  .game-shell[data-in-match="true"] .key-hint { font-size: 12px; }
+  .game-shell[data-in-match="true"] .blackjack-actions { grid-template-columns: 116px minmax(0, 1fr) minmax(0, 1fr) 180px auto; }
+  .game-shell[data-in-match="true"] .card-row[aria-label="Your hand"] .playing-card { width: 104px; height: 146px; }
+  .game-shell[data-in-match="true"] .card-row[aria-label="Dealer hand"] .playing-card { width: 84px; height: 118px; }
+}
+@media (min-width: 801px) {
+  /* The top-left bar matches the players panel's width, and its Settings menu opens above the panels. */
+  .game-shell[data-in-match="true"] .game-header { z-index: 20; }
+  .game-shell[data-in-match="true"] .game-header .header-actions { width: 100%; }
+  .game-shell[data-in-match="true"] .settings-menu { left: auto; right: 0; width: min(260px, var(--side-w)); }
+}
