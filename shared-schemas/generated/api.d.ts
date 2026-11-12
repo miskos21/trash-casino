@@ -62,6 +62,7 @@ export type ApiContract =
   | BlackjackState
   | BLACKJACK_HIT
   | BLACKJACK_STAND
+  | BLACKJACK_NEXT_HAND
   | BLACKJACK_STATE
   | BlackjackTally
   | BlackjackShoe
@@ -117,6 +118,7 @@ export type ClientMessage =
   | ROOM_START
   | BLACKJACK_HIT
   | BLACKJACK_STAND
+  | BLACKJACK_NEXT_HAND
   | MATCH_END;
 export type ServerMessage =
   | PONG
@@ -594,6 +596,21 @@ export interface BLACKJACK_STAND {
     expectedRevision: number;
   };
 }
+/**
+ * Ready for the next Blackjack hand. The server deals when every seated human has asked, or when nextHandAtEpochMillis passes.
+ */
+export interface BLACKJACK_NEXT_HAND {
+  protocolVersion: 1;
+  type: "BLACKJACK_NEXT_HAND";
+  requestId: Identifier | null;
+  payload: {
+    matchId: Identifier;
+    /**
+     * The finished hand shown in RESULT; a vote for an older hand is ignored.
+     */
+    hand: number;
+  };
+}
 export interface MATCH_END {
   protocolVersion: 1;
   type: "MATCH_END";
@@ -692,9 +709,20 @@ export interface BlackjackState {
   handPhase: "SHUFFLING" | "PLAYING" | "RESULT";
   cardsRemaining: number;
   /**
-   * 0 unless the next hand of this shoe is scheduled.
+   * 0 unless the next hand is scheduled. In RESULT, 0 means the deal waits for every seated human to send BLACKJACK_NEXT_HAND.
    */
   nextHandAtEpochMillis: number;
+  /**
+   * Players who already asked for the next hand (RESULT only).
+   *
+   * @maxItems 4
+   */
+  nextHandReady:
+    | []
+    | [Identifier]
+    | [Identifier, Identifier]
+    | [Identifier, Identifier, Identifier]
+    | [Identifier, Identifier, Identifier, Identifier];
   /**
    * @minItems 1
    * @maxItems 4

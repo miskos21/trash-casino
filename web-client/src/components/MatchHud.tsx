@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { GameConnection } from '../services/useGameConnection';
 import { avatars } from '../avatars';
 import { useMatchNow } from '../game/MatchClock';
@@ -8,7 +8,7 @@ import { DieFace } from './DieFace';
 import { TableActivity } from './TableActivity';
 import { SeatPresence } from './SeatPresence';
 
-export function MatchHud({ connection: c, onMenu, trash }: { connection: GameConnection; onMenu: () => void; trash?: string | null }) {
+export function MatchHud({ connection: c, onMenu, trash, status }: { connection: GameConnection; onMenu: () => void; trash?: string | null; status?: ReactNode }) {
   const state = c.game?.publicState;
   const now = useMatchNow();
   const [quantity, setQuantity] = useState(1);
@@ -18,6 +18,7 @@ export function MatchHud({ connection: c, onMenu, trash }: { connection: GameCon
   const [nextField, setNextField] = useState<'quantity' | 'face'>('quantity');
   const totalRef = useRef(0);
   const claimButton = useRef<HTMLButtonElement>(null), bluffButton = useRef<HTMLButtonElement>(null);
+  const againButton = useRef<HTMLButtonElement>(null), lobbyButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!state) return;
     const last = state.lastBid;
@@ -37,6 +38,8 @@ export function MatchHud({ connection: c, onMenu, trash }: { connection: GameCon
     }
     setNextField(nextFieldRef.current);
   });
+  const matchOver = !!c.room && state?.phase === 'FINISHED';
+  useTurnKeys(matchOver && c.socket === 'online' && !c.pending, state?.matchId, [againButton, lobbyButton]);
   if (!c.room || !state) return null;
   const name = (id: string | null) => state.participants.find((p) => p.playerId === id)?.displayName ?? 'Player';
   const finished = state.phase === 'FINISHED';
@@ -54,6 +57,17 @@ export function MatchHud({ connection: c, onMenu, trash }: { connection: GameCon
   const leader = state.participants.find((p) => p.playerId === state.winnerId);
   const title = finished ? leader ? leader.displayName + ' wins with ' + leader.chips + ' chips' : 'Tie on chips' : paused ? 'Round ' + round + ' revealed'
     : yourTurn ? 'Your turn' : name(state.currentPlayerId) + '’s turn';
+  // Play again: be ready for a rematch in this room; the host also starts it once everyone else is ready.
+  const room = c.room;
+  const me = room.participants.find((p) => p.playerId === room.youId);
+  const isHost = room.hostId === room.youId;
+  const othersReady = room.participants.filter((p) => p.playerId !== room.youId && p.presence !== 'LEFT').every((p) => p.ready);
+  const canPlayAgain = isHost ? othersReady || !me?.ready : !me?.ready;
+  const againLabel = canPlayAgain ? 'Play again' : isHost ? 'Waiting for players…' : 'Waiting for the host…';
+  const playAgain = () => {
+    if (!me?.ready) c.send({ protocolVersion: 1, type: 'ROOM_READY', requestId: null, payload: { roomId: room.roomId, ready: true } });
+    if (isHost && othersReady) c.send({ protocolVersion: 1, type: 'ROOM_START', requestId: null, payload: { roomId: room.roomId } });
+  };
   const send = (type: 'PLAYER_BID' | 'CALL_BLUFF') => {
     if (type === 'PLAYER_BID') c.send({ protocolVersion: 1, type, requestId: null,
       payload: { matchId: state.matchId, expectedRevision: state.revision, bid: { quantity, face } } });
@@ -66,6 +80,11 @@ export function MatchHud({ connection: c, onMenu, trash }: { connection: GameCon
       <h2>{title}</h2>
       {paused && c.reveal?.matchId === state.matchId && <p>{name(c.reveal.loserId)} pays 1 chip to {name(c.reveal.winnerId)}</p>}
       {finished && <p>Final chips: {[...state.participants].sort((a, b) => b.chips - a.chips).map((p) => p.displayName + ' ' + p.chips).join(' · ')}</p>}
+      {status}
+      {finished && <div className="heading-actions">
+        <button ref={againButton} className="resume-button" disabled={!canPlayAgain || c.socket !== 'online' || c.pending} onClick={playAgain}>{againLabel}</button>
+        <button ref={lobbyButton} className="secondary-button" onClick={onMenu}>Back to lobby</button>
+      </div>}
     </section>
     <aside className="match-seats" aria-label="Match participants">
       {state.participants.map((p) => {
@@ -101,7 +120,7 @@ export function MatchHud({ connection: c, onMenu, trash }: { connection: GameCon
         <div aria-label="Your private dice">{shownDice.map((value, i) => <DieFace key={i} value={value} />)}
           {!shownDice.length && <span className="eliminated-label">Out of chips · watching the match</span>}</div>
       </div>
-      {finished ? <button className="resume-button" onClick={onMenu}>Back to lobby</button> : <>
+      {finished ? null : <>
         <div className="bid-controls">
           <label className={enabled && nextField === 'quantity' ? 'next-key' : ''}>How many dice?<input aria-label="Claim quantity" type="number" min={1} max={total} value={quantity}
             disabled={!enabled} onChange={(e) => setQuantity(Number(e.target.value))} /></label>

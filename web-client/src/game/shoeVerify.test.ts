@@ -15,7 +15,7 @@ const tally = { wins: 0, losses: 1, pushes: 0, blackjacks: 0 };
 
 // Hand dealt from position 1 (after the burn): p1, p2, dealer, p1, p2, dealer, then p2 hits once, dealer draws once.
 const result: BlackjackState = {
-  matchId: 'm', phase: 'FINISHED', hand: 1, handPhase: 'RESULT', cardsRemaining: 0, nextHandAtEpochMillis: 0,
+  matchId: 'm', phase: 'FINISHED', hand: 1, handPhase: 'RESULT', cardsRemaining: 0, nextHandAtEpochMillis: 0, nextHandReady: [],
   currentPlayerId: null, revision: 3, deadlineEpochMillis: 0,
   players: [
     { playerId: 'p1', displayName: 'P1', avatar: 'CAT', npc: false, cards: [at(1), at(4)], total: 5, status: 'STOOD', outcome: 'LOSE', tally },

@@ -306,6 +306,52 @@ class RoomServiceTest {
         assertNotEquals(commitment, host.last("BLACKJACK_STATE").path("shoe").path("commitment").asText());
     }
     static String card(JsonNode card) { return card.path("rank").asText() + card.path("suit").asText(); }
+    private JsonNode playToResult(Guest player) {
+        for(int tick=0; tick<50 && !player.last("BLACKJACK_STATE").path("handPhase").asText().equals("RESULT"); tick++) rooms.tick();
+        var state = player.last("BLACKJACK_STATE");
+        assertEquals("RESULT", state.path("handPhase").asText());
+        return state;
+    }
+    @Test void blackjackNextHandWaitsForEveryHumanAtTheTable() throws Exception {
+        rooms = new RoomService(protocol, 0, 0, 0, 60_000);
+        var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "CAT", "game", "BLACKJACK", "agents", 0));
+        var guest = new Guest(); guest.join(host);
+        host.ready(); guest.ready(); host.start();
+        rooms.tick(); // The shuffle pause is zero: hand 1 is dealt without asking.
+        var result = playToResult(host);
+        String matchId = result.path("matchId").asText();
+        assertEquals(1, result.path("hand").asInt());
+        assertTrue(result.path("nextHandAtEpochMillis").asLong() > System.currentTimeMillis()); // Two humans: a fallback deal time.
+        assertEquals(0, result.path("nextHandReady").size());
+        rooms.tick(); rooms.tick();
+        assertEquals(1, host.last("BLACKJACK_STATE").path("hand").asInt()); // Nobody asked yet.
+        host.send("BLACKJACK_NEXT_HAND", Map.of("matchId", matchId, "hand", 1));
+        assertEquals(List.of(host.id()), mapper.convertValue(guest.last("BLACKJACK_STATE").path("nextHandReady"), List.class));
+        rooms.tick();
+        assertEquals(1, host.last("BLACKJACK_STATE").path("hand").asInt()); // Still waiting for the guest.
+        guest.send("BLACKJACK_NEXT_HAND", Map.of("matchId", matchId, "hand", 2));
+        assertEquals("STALE_STATE", guest.last("ERROR").path("code").asText());
+        guest.send("BLACKJACK_NEXT_HAND", Map.of("matchId", matchId, "hand", 1));
+        rooms.tick();
+        var next = host.last("BLACKJACK_STATE");
+        assertEquals(2, next.path("hand").asInt());
+        assertEquals(0, next.path("nextHandReady").size());
+    }
+    @Test void blackjackLonePlayerIsNeverDealtWithoutAsking() throws Exception {
+        rooms = new RoomService(protocol, 0, 0, 0, 60_000);
+        var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "CAT", "game", "BLACKJACK", "agents", 1));
+        host.ready(); host.start();
+        rooms.tick();
+        var result = playToResult(host);
+        assertEquals(0, result.path("nextHandAtEpochMillis").asLong()); // No fallback deal for a lone human.
+        for(int tick=0; tick<20; tick++) rooms.tick();
+        assertEquals(1, host.last("BLACKJACK_STATE").path("hand").asInt());
+        host.send("BLACKJACK_HIT", Map.of("matchId", result.path("matchId").asText(), "expectedRevision", result.path("revision").asLong()));
+        assertEquals("ILLEGAL_ACTION", host.last("ERROR").path("code").asText());
+        host.send("BLACKJACK_NEXT_HAND", Map.of("matchId", result.path("matchId").asText(), "hand", 1));
+        rooms.tick();
+        assertEquals(2, host.last("BLACKJACK_STATE").path("hand").asInt());
+    }
     @Test void blackjackTimeoutStandsAndAgentsPlayTheirOwnHands() throws Exception {
         var host = new Guest(); host.send("ROOM_CREATE", Map.of("displayName", "Host", "avatar", "FROG", "game", "BLACKJACK", "agents", 2));
         assertEquals(List.of("Host", "Don Raccoone", "Foxy"), java.util.stream.StreamSupport.stream(

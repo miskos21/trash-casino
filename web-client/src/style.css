@@ -854,3 +854,18 @@ button:disabled { opacity: 0.45; }
   .game-shell[data-in-match="true"] .game-header .header-actions { width: 100%; }
   .game-shell[data-in-match="true"] .settings-menu { left: auto; right: 0; width: min(260px, var(--side-w)); }
 }
+
+/* Match heading as the result card: paid-game status, transaction link, and the next step live in one box. */
+.match-heading .funding-panel.inline { position: static; transform: none; width: auto; margin: 8px 0 0; padding: 8px 0 0; border: 0;
+  border-top: 1px solid #858a9340; border-radius: 0; background: none; box-shadow: none; gap: 2px; font-size: 12px; text-align: center; }
+.match-heading .funding-panel.inline header { justify-content: center; gap: 6px; color: #c9b58c; font-size: 11px; }
+.match-heading .funding-panel.inline header strong { font-weight: 600; }
+.match-heading .funding-panel.inline header span::before { content: '·'; margin-right: 6px; }
+.match-heading .funding-panel.inline p { font-size: 12px; color: #d6d7da; }
+.match-heading .room-error { font-size: 12px; }
+.match-heading a, .match-heading button { pointer-events: auto; }
+.heading-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
+.heading-actions button { width: auto; flex: 0 1 auto; min-width: 150px; min-height: 40px; padding: 0 22px; }
+.heading-actions small { color: #b2b5bb; font-size: 12px; letter-spacing: 0; }
+/* A result card with a next step (Next hand, Play again) sits above the chat, which covers it on narrow screens. */
+.match-heading:has(.heading-actions) { z-index: 13; }

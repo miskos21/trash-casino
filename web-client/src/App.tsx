@@ -158,10 +158,11 @@ export function App() {
       </div>
     </header>
     <TablePresence room={status.room} />
-    <FundingPanel connection={status} wallet={wallet} />
-
-    {status.room?.game === 'BLACKJACK' ? <BlackjackHud connection={status} onMenu={() => openMenu('game')} trash={stripTrash} />
-      : <MatchHud connection={status} onMenu={() => openMenu('game')} trash={stripTrash} />}
+    {/* Before a match the paid-game status floats on its own; during one it sits inside the match heading. */}
+    {!inMatch && <FundingPanel connection={status} wallet={wallet} />}
+    {status.room?.game === 'BLACKJACK'
+      ? <BlackjackHud connection={status} onMenu={() => openMenu('game')} trash={stripTrash} status={<FundingPanel connection={status} wallet={wallet} inline />} />
+      : <MatchHud connection={status} onMenu={() => openMenu('game')} trash={stripTrash} status={<FundingPanel connection={status} wallet={wallet} inline />} />}
     {inMatch && <ChatPanel connection={status} matchId={matchId!} />}
     <div className="camera-hint" aria-hidden="true"><span className="desktop-hint">Drag to look · Scroll to zoom</span><span className="touch-hint">Drag to look · Pinch to zoom</span></div>
 

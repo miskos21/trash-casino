@@ -46,8 +46,15 @@ test('a guest plays Blackjack hands from one shoe with two agents against the ho
   await expect(page.locator('.hand-tally')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('blackjack.png') });
 
-  // The next hand is dealt automatically from the same shoe after the result pause.
-  await expect(page.locator('.match-heading small')).toContainText('HAND 2', { timeout: 15000 });
+  // The next hand waits for you: a lone player is never dealt without asking. Next hand (or Enter) deals it.
+  const next = page.locator('.match-heading').getByRole('button', { name: 'Next hand', exact: true });
+  await expect(next).toBeVisible();
+  await expect(next).toBeFocused();
+  await page.waitForTimeout(6000); // Longer than the old automatic result pause.
+  await expect(page.locator('.match-heading small').first()).toContainText('HAND 1');
+  await next.click();
+  await expect(page.locator('.match-heading small').first()).toContainText('HAND 2', { timeout: 15000 });
+  await expect(next).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Back to lobby', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Your hand').getByRole('img')).toHaveCount(2);
   expect(await page.locator('.shoe-fingerprint').getAttribute('title')).toBe(fingerprint); // Same shoe, same commitment.

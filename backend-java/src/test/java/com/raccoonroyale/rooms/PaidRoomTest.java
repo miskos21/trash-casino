@@ -82,7 +82,7 @@ class PaidRoomTest {
 
     PaidRoomTest() throws Exception {
         protocol = new Protocol(mapper);
-        rooms = new RoomService(protocol, new MockAgentBrain(), new AgentActionParser(protocol), chain, wallets, 0, 0, 0, 5000);
+        rooms = new RoomService(protocol, new MockAgentBrain(), new AgentActionParser(protocol), chain, wallets, 0, 0, 0, 5000, 0);
     }
 
     String session(String account) throws Exception {

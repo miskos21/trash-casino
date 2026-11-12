@@ -49,25 +49,33 @@ public class RoomService {
     private final Map<String, Peer> peers = new HashMap<>();
     private final Map<String, Room> rooms = new LinkedHashMap<>();
     private final long turnMillis, npcMillis, revealMillis, agentTimeoutMillis;
+    /** Blackjack: with more than one human, deal anyway this long after a hand ends. 0 deals after the reveal pause, without waiting for anyone. */
+    private final long nextHandMillis;
     @Autowired
     public RoomService(Protocol protocol, AgentBrain brain, AgentActionParser parser, ChainGateway chain, WalletAuthService wallets,
         @Value("$" + "{app.game.turn-timeout-ms:30000}") long turnMillis,
         @Value("$" + "{app.game.npc-delay-ms:1100}") long npcMillis,
         @Value("$" + "{app.game.reveal-ms:4000}") long revealMillis,
-        @Value("$" + "{app.llm.timeout-ms:5000}") long agentTimeoutMillis) {
+        @Value("$" + "{app.llm.timeout-ms:5000}") long agentTimeoutMillis,
+        @Value("$" + "{app.game.next-hand-ms:30000}") long nextHandMillis) {
         this.protocol = protocol; this.brain = brain; this.parser = parser; this.chain = chain; this.wallets = wallets;
         this.turnMillis = turnMillis; this.npcMillis = npcMillis; this.revealMillis = revealMillis;
-        this.agentTimeoutMillis = agentTimeoutMillis;
+        this.agentTimeoutMillis = agentTimeoutMillis; this.nextHandMillis = nextHandMillis;
     }
     /** Agent tests: free play only (chain disabled). */
     public RoomService(Protocol protocol, AgentBrain brain, AgentActionParser parser,
         long turnMillis, long npcMillis, long revealMillis, long agentTimeoutMillis) {
         this(protocol, brain, parser, ChainGateway.disabled(), new WalletAuthService(ChainGateway.disabled(), "trashnino"),
-            turnMillis, npcMillis, revealMillis, agentTimeoutMillis);
+            turnMillis, npcMillis, revealMillis, agentTimeoutMillis, 0);
     }
     /** Rule tests: the TEMPORARY MOCK brain answers synchronously, so ticks stay deterministic. Chain disabled. */
     public RoomService(Protocol protocol, long turnMillis, long npcMillis, long revealMillis) {
         this(protocol, new MockAgentBrain(), new AgentActionParser(protocol), turnMillis, npcMillis, revealMillis, 5000);
+    }
+    /** Rule tests that wait for players between Blackjack hands. */
+    public RoomService(Protocol protocol, long turnMillis, long npcMillis, long revealMillis, long nextHandMillis) {
+        this(protocol, new MockAgentBrain(), new AgentActionParser(protocol), ChainGateway.disabled(),
+            new WalletAuthService(ChainGateway.disabled(), "trashnino"), turnMillis, npcMillis, revealMillis, 5000, nextHandMillis);
     }
     private static class Peer {
         final WebSocketSession socket;
@@ -126,6 +134,7 @@ public class RoomService {
         final List<ChatMessage> chat=new ArrayList<>();
         String pendingTurn; // matchId:revision of an agent turn awaiting its brain.
         final Set<String> replying=new HashSet<>(); // Agents with a chat reply in flight.
+        final Set<String> nextHandReady=new HashSet<>(); // Blackjack: humans who asked for the next hand.
         Room(String code,String gameType) { this.code=code; this.gameType=gameType; this.lastActivity=System.currentTimeMillis(); }
         LiarsDiceGame.PublicState state() { return game.viewFor(seats.getFirst().id).publicState(); }
         String phase() {
@@ -154,7 +163,7 @@ public class RoomService {
     public record BlackjackDealer(List<BlackjackGame.Card> cards,int hiddenCards,int total) {}
     public record BlackjackShoe(int decks,int size,int burned,int handStart,String commitment,BlackjackGame.ShoeReveal reveal) {}
     public record BlackjackState(String matchId,String phase,int hand,String handPhase,int cardsRemaining,long nextHandAtEpochMillis,
-        List<BlackjackHand> players,BlackjackDealer dealer,String currentPlayerId,long revision,long deadlineEpochMillis,BlackjackShoe shoe) {}
+        List<String> nextHandReady,List<BlackjackHand> players,BlackjackDealer dealer,String currentPlayerId,long revision,long deadlineEpochMillis,BlackjackShoe shoe) {}
     private static class Rejected extends RuntimeException {
         final String code;
         Rejected(String code,String text) { super(text);this.code=code; }
@@ -209,6 +218,7 @@ public class RoomService {
                 case "ROOM_START" -> start(peer,payload);
                 case "PLAYER_BID","CALL_BLUFF" -> action(peer,type,payload);
                 case "BLACKJACK_HIT","BLACKJACK_STAND" -> blackjackAction(peer,type,payload);
+                case "BLACKJACK_NEXT_HAND" -> nextHandRequest(peer,payload);
                 case "PLAYER_CHAT" -> playerChat(peer,payload);
                 case "MATCH_END" -> endMatch(peer,payload);
                 default -> throw new Rejected("NOT_IMPLEMENTED","This feature is not connected yet.");
@@ -596,11 +606,43 @@ public class RoomService {
         room.revision++;room.lastActivity=System.currentTimeMillis();
         afterBlackjackMove(room);publish(room);
     }
+    /** Humans still at the table who are dealt into this shoe; only they are waited for. */
+    private List<String> waitingHumans(Room room) {
+        var inShoe=room.blackjack.publicState().players().stream().map(BlackjackGame.Hand::playerId).collect(java.util.stream.Collectors.toSet());
+        return room.seats.stream().filter(s->!s.npc&&!s.abandoned&&inShoe.contains(s.id)).map(s->s.id).toList();
+    }
+    /**
+     * Blackjack: the first hand is dealt after the shuffle pause. Later hands wait until every human at the
+     * table asked for the next hand. With several humans the deal also happens at the fallback time, so one
+     * idle player cannot stall the others; a lone player is never dealt (and never staked) without asking.
+     */
+    private boolean nextHandDue(Room room,long now) {
+        if(nextHandMillis<=0||room.blackjack.publicState().handNumber()==0) return now>=room.resumeAt;
+        var humans=waitingHumans(room);
+        return room.nextHandReady.containsAll(humans)||(humans.size()>1&&now>=room.resumeAt);
+    }
+    /** When the next hand is dealt at the latest; 0 while it waits for the players with no fallback. */
+    private long nextHandAt(Room room) {
+        if(nextHandMillis<=0||room.blackjack.publicState().handNumber()==0) return room.resumeAt;
+        return waitingHumans(room).size()>1?room.resumeAt:0;
+    }
+    private void nextHandRequest(Peer peer,JsonNode payload) {
+        Room room=room(peer);
+        require(room.blackjack!=null&&room.matchId.equals(payload.path("matchId").asText()),"STALE_STATE","Wrong match.");
+        var state=room.blackjack.publicState();
+        require(state.handOver()&&!state.shoeOver()&&state.handNumber()>0,"ILLEGAL_ACTION","No finished hand to continue from.");
+        require(payload.path("hand").asInt()==state.handNumber(),"STALE_STATE","That hand is no longer the latest.");
+        room.lastActivity=System.currentTimeMillis();
+        if(room.nextHandReady.add(peer.playerId)) publish(room); // The tick deals once everyone has asked.
+    }
     private void afterBlackjackMove(Room room) {
         var state=room.blackjack.publicState();
         afterPaidHand(room,state);
         if(state.shoeOver()) {room.deadline=0;room.resumeAt=0;room.seats.forEach(s->s.ready=s.npc);}
-        else if(state.handOver()) {room.deadline=0;room.resumeAt=System.currentTimeMillis()+revealMillis;} // Show the result first.
+        else if(state.handOver()) { // Show the result first; the next deal waits for the players (see nextHandDue).
+            room.deadline=0;room.nextHandReady.clear();
+            room.resumeAt=System.currentTimeMillis()+(nextHandMillis>0&&state.handNumber()>0?nextHandMillis:revealMillis);
+        }
         else scheduleTurn(room);
     }
     private void event(Room room,String type,int round,String actor,LiarsDiceGame.Bid bid,String loser,Integer count,String cause) {
@@ -706,7 +748,7 @@ public class RoomService {
                 return new BlackjackHand(h.playerId(),s.name,s.avatar,s.npc,h.cards(),h.total(),h.status(),h.outcome(),h.tally());}).toList();
             send(recipient.socket,"BLACKJACK_STATE",null,new BlackjackState(room.matchId,room.phase(),state.handNumber(),
                 state.handNumber()==0?"SHUFFLING":state.handOver()?"RESULT":"PLAYING",state.cardsRemaining(),
-                state.handOver()&&!state.shoeOver()?room.resumeAt:0,hands,
+                state.handOver()&&!state.shoeOver()?nextHandAt(room):0,List.copyOf(room.nextHandReady),hands,
                 new BlackjackDealer(state.dealerCards(),state.hiddenCards(),state.dealerTotal()),
                 state.currentPlayerId(),room.revision,room.deadline,new BlackjackShoe(BlackjackGame.DECKS,state.shoeSize(),
                     state.burned(),state.handStart(),state.commitment(),state.shoeOver()?room.blackjack.reveal():null)));
@@ -757,7 +799,7 @@ public class RoomService {
             if(!room.phase().equals("IN_PROGRESS")) continue;
             if(room.blackjack!=null) {
                 if(room.blackjack.publicState().handOver()) {
-                    if(now>=room.resumeAt&&blackjackReady(room)) {room.blackjack.nextHand();room.revision++;afterBlackjackMove(room);publish(room);}
+                    if(nextHandDue(room,now)&&blackjackReady(room)) {room.nextHandReady.clear();room.blackjack.nextHand();room.revision++;afterBlackjackMove(room);publish(room);}
                     continue;
                 }
                 String actor=room.blackjack.publicState().currentPlayerId();Seat seat=seat(room,actor);

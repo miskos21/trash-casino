@@ -85,6 +85,9 @@ test('blackjack moves carry no cards and the dealer hole card has no public fiel
   const move = { matchId: 'm', expectedRevision: 0 };
   assert.ok(validate('ClientMessage', envelope('BLACKJACK_HIT', move)));
   assert.ok(validate('ClientMessage', envelope('BLACKJACK_STAND', move)));
+  assert.ok(validate('ClientMessage', envelope('BLACKJACK_NEXT_HAND', { matchId: 'm', hand: 1 })));
+  assert.equal(validate('ClientMessage', envelope('BLACKJACK_NEXT_HAND', { matchId: 'm', hand: 0 })), false);
+  assert.equal(validate('ClientMessage', envelope('BLACKJACK_NEXT_HAND', { matchId: 'm', hand: 1, bet: '5' })), false);
   assert.equal(validate('ClientMessage', envelope('BLACKJACK_HIT', { ...move, card: { rank: 'A', suit: 'S' } })), false);
   assert.equal(validate('ClientMessage', envelope('BLACKJACK_STATE', {})), false);
   assert.ok(validate('ClientMessage', envelope('ROOM_CREATE', { displayName: 'P', avatar: 'FROG', game: 'BLACKJACK', agents: 0 })));
@@ -93,7 +96,7 @@ test('blackjack moves carry no cards and the dealer hole card has no public fiel
   const hand = { playerId: 'p1', displayName: 'P', avatar: 'CAT', npc: false, cards: [{ rank: 'A', suit: 'S' }, { rank: 'K', suit: 'H' }],
     total: 21, status: 'BLACKJACK', outcome: null, tally: { wins: 2, losses: 1, pushes: 0, blackjacks: 1 } };
   const dealer = { cards: [{ rank: '9', suit: 'C' }], hiddenCards: 1, total: 9 };
-  const state = { matchId: 'm', phase: 'IN_PROGRESS', hand: 4, handPhase: 'PLAYING', cardsRemaining: 250, nextHandAtEpochMillis: 0,
+  const state = { matchId: 'm', phase: 'IN_PROGRESS', hand: 4, handPhase: 'PLAYING', cardsRemaining: 250, nextHandAtEpochMillis: 0, nextHandReady: [],
     players: [hand], dealer, currentPlayerId: null, revision: 0, deadlineEpochMillis: 0,
     shoe: { decks: 6, size: 312, burned: 1, handStart: 40, commitment: 'a'.repeat(64), reveal: null } };
   assert.ok(validate('ServerMessage', envelope('BLACKJACK_STATE', state)));
