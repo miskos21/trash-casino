@@ -245,9 +245,24 @@ NPC function-call keys into `.env` for the bridge (see [near-bridge](../near-bri
 NEAR_ROOT_ACCOUNT=<name>.testnet ./scripts/env.sh ../.env
 ```
 
-It sets the contract and account IDs, the three restricted keys, and a new
-`BRIDGE_TOKEN`, and never prints a key. Full-access keys are not read.
-Teammates deploy their own copy this way instead of sharing keys.
+It sets the contract and account IDs, the three restricted keys, a new `BRIDGE_TOKEN`,
+and `COMPOSE_PROFILES=chain` (so `docker compose up` starts the bridge), and never
+prints a key. Full-access keys are not read. For the shared team deployment the
+keychain holder writes this block for teammates (see the main README).
+
+### Upgrade deployed code
+
+`deploy.sh` never replaces code that is already deployed. To ship a contract change
+while keeping balances, games, and the house bankroll:
+
+```bash
+./scripts/test.sh && ./scripts/build.sh
+NEAR_ROOT_ACCOUNT=<name>.testnet ./scripts/upgrade.sh
+```
+
+It compares each contract's on-chain code hash with `res/*.wasm`, redeploys only what
+differs without an init call, and waits until the chain shows the new hash. The new
+code must still read the stored state: changing a stored struct needs a migration.
 
 `NEAR_NETWORK=sandbox` runs the same script against a local node, for a rehearsal.
 Any other network, including mainnet, is refused.

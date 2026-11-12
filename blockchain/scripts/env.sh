@@ -56,7 +56,9 @@ FOXY_KEY="$(restricted_key "foxy.$ROOT")"
 # Shared secret between Java and the local bridge; generated fresh, never shared.
 BRIDGE_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 
-VALUES="NEAR_NETWORK=$NETWORK
+# COMPOSE_PROFILES=chain makes a plain `docker compose up` start near-bridge too.
+VALUES="COMPOSE_PROFILES=chain
+NEAR_NETWORK=$NETWORK
 TRASH_TOKEN_CONTRACT_ID=$TOKEN
 TRASH_CASINO_CONTRACT_ID=$CASINO
 BRIDGE_TOKEN=$BRIDGE_TOKEN

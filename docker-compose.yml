@@ -46,8 +46,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-  # Signs with restricted testnet keys only. Started only with `--profile chain`
-  # once the contracts are deployed and the keys are in .env.
+  # Signs with restricted testnet keys only. Started only with the `chain` profile
+  # (COMPOSE_PROFILES=chain in .env, written by blockchain/scripts/env.sh) once the
+  # keys are in .env. The bridge itself refuses to start with a missing or invalid value.
   bridge:
     profiles: ["chain"]
     build:
@@ -56,11 +57,11 @@ services:
     environment:
       NEAR_NETWORK: ${NEAR_NETWORK:-testnet}
       NEAR_RPC_URL: ${NEAR_RPC_URL:-https://test.rpc.fastnear.com}
-      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?Set BRIDGE_TOKEN in .env}
-      TRASH_TOKEN_CONTRACT_ID: ${TRASH_TOKEN_CONTRACT_ID:?Set TRASH_TOKEN_CONTRACT_ID in .env}
-      TRASH_CASINO_CONTRACT_ID: ${TRASH_CASINO_CONTRACT_ID:?Set TRASH_CASINO_CONTRACT_ID in .env}
-      NEAR_SETTLEMENT_ACCOUNT_ID: ${NEAR_SETTLEMENT_ACCOUNT_ID:?Set NEAR_SETTLEMENT_ACCOUNT_ID in .env}
-      NEAR_SETTLEMENT_PRIVATE_KEY: ${NEAR_SETTLEMENT_PRIVATE_KEY:?Set NEAR_SETTLEMENT_PRIVATE_KEY in .env}
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:-}
+      TRASH_TOKEN_CONTRACT_ID: ${TRASH_TOKEN_CONTRACT_ID:-}
+      TRASH_CASINO_CONTRACT_ID: ${TRASH_CASINO_CONTRACT_ID:-}
+      NEAR_SETTLEMENT_ACCOUNT_ID: ${NEAR_SETTLEMENT_ACCOUNT_ID:-}
+      NEAR_SETTLEMENT_PRIVATE_KEY: ${NEAR_SETTLEMENT_PRIVATE_KEY:-}
       NEAR_AGENT_DON_ACCOUNT_ID: ${NEAR_AGENT_DON_ACCOUNT_ID:-}
       NEAR_AGENT_DON_PRIVATE_KEY: ${NEAR_AGENT_DON_PRIVATE_KEY:-}
       NEAR_AGENT_FOXY_ACCOUNT_ID: ${NEAR_AGENT_FOXY_ACCOUNT_ID:-}

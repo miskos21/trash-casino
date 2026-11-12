@@ -63,27 +63,67 @@ Deployed on NEAR Testnet: token `token.trashnino-demo.testnet`, casino
 
 Without bridge configuration the server offers free play only; nothing is simulated.
 
-**Paid play on your own machine needs your own deployment.** The keys for the shared
-`trashnino-demo.testnet` accounts are never handed out. To try paid play locally,
-deploy your own copy to testnet with your own faucet account (about 7.5 of the ~10 free
+**Paid play on your own machine (team).** Every teammate runs the whole app locally
+(database, backend, bridge, web) against the one shared deployment above, so everyone
+sees the same TRASH balances and games. Your local bridge needs the shared deployment's
+restricted function-call keys (settler: `create_game / settle_game / cancel_game`;
+Don and Foxy: `agent_pay`). They cannot deploy, move house money directly, or touch
+player wallets, but they still sign for the casino: get them from a teammate privately,
+never commit them, and never post them in a chat or issue.
+
+The teammate who holds the `trashnino-demo.testnet` keychain (WSL2 or Linux) writes them
+into a fresh file and sends that file:
+
+```bash
+cd blockchain
+cp ../.env.example /tmp/trashnino.env
+NEAR_ROOT_ACCOUNT=trashnino-demo.testnet ./scripts/env.sh /tmp/trashnino.env
+```
+
+Everyone else saves that file as `.env` in the repository root, then:
+
+```bash
+docker compose up --build -d   # COMPOSE_PROFILES=chain in .env also starts near-bridge
+npm ci && npm run dev          # http://localhost:5173
+```
+
+Without the chain block in `.env` the app runs free play only. Every local bridge signs
+with the same keys; near-api-js retries a transaction whose nonce another machine
+already used, so parallel games on several machines are fine.
+
+**Updating the shared contracts.** After a change under `blockchain/`, the keychain
+holder runs the tests, builds, and replaces the on-chain code while keeping its state:
+
+```bash
+cd blockchain
+./scripts/test.sh && ./scripts/build.sh
+NEAR_ROOT_ACCOUNT=trashnino-demo.testnet ./scripts/upgrade.sh
+```
+
+`upgrade.sh` redeploys only contracts whose code hash differs from `res/*.wasm`. The
+backend and bridge expect the current contract code, so do this before teammates pull a
+backend that depends on it.
+
+**Your own deployment (optional).** To experiment without touching the shared
+contracts, deploy your own copy with your own faucet account (about 7.5 of the ~10 free
 test NEAR, Linux/macOS/WSL2 with Rust, `near` CLI, `jq`, and `curl`):
 
 ```bash
 cp .env.example .env
 cd blockchain
-near account create-account sponsor-by-faucet-service trashnino-<you>.testnet \
-  autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+near account create-account sponsor-by-faucet-service trashnino-<you>.testnet   autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
 ./scripts/build.sh
 NEAR_ROOT_ACCOUNT=trashnino-<you>.testnet ./scripts/deploy.sh
 NEAR_ROOT_ACCOUNT=trashnino-<you>.testnet ./scripts/env.sh ../.env
-cd .. && docker compose --profile chain up --build -d
+cd .. && docker compose up --build -d
 npm ci && npm run dev    # http://localhost:5173
 ```
 
 `deploy.sh` writes your account IDs to the ignored `deployments/testnet.<root>.json`,
 so the shared `deployments/testnet.json` stays untouched. `env.sh` copies only the
-restricted function-call keys (settler, Don, Foxy) and a fresh `BRIDGE_TOKEN` into
-`.env`. Your deployment has its own TRASH, house bankroll, and players.
+restricted function-call keys (settler, Don, Foxy), a fresh `BRIDGE_TOKEN`, and
+`COMPOSE_PROFILES=chain` into `.env`. Your deployment has its own TRASH, house
+bankroll, and players.
 Negotiations, the paid information deal, and the chat-driven tip are not wired into
 the game yet (the contract methods `pay_offer` and `agent_pay` and the bridge endpoint exist).
 The frontend's HTTP-failure unit test uses a labelled `TEMPORARY MOCK` response

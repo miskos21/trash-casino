@@ -213,4 +213,4 @@ for account in "$SETTLER" "${AGENTS[@]}"; do
       done
 done
 echo "Full-access keys (~/.near-credentials/$NETWORK/<account>.json) stay with the team, not the server."
-echo "Write the chain block of .env with: NEAR_ROOT_ACCOUNT=$ROOT ./scripts/env.sh >> ../.env"
+echo "Write the chain block of .env with: NEAR_ROOT_ACCOUNT=$ROOT ./scripts/env.sh ../.env"
