@@ -103,7 +103,7 @@ public class RoomService {
     /** Paid-room state. Changes only after confirmed final execution outcomes. */
     private static class Economy {
         final boolean blackjack;
-        /** Liar's Dice buy-in, or the Blackjack bet per hand, in yoctoTRASH. */
+        /** Liar's Dice buy-in, or the starting Blackjack bet per hand, in yoctoTRASH. */
         final BigInteger stake;
         String gameId, funding="NOT_STARTED", settlement="NOT_STARTED", txHash, message;
         boolean inFlight, cancelSent;
@@ -112,12 +112,19 @@ public class RoomService {
         List<RoomPayout> payouts=List.of();
         /** On-chain games created and not yet settled or cancelled. */
         final Set<String> open=new LinkedHashSet<>();
-        // Blackjack: the hand the current on-chain game is for, and who is in it (seat ID -> account).
-        int readyHand, settledHand;
-        Map<String,String> handSeats=Map.of();
+        // Blackjack: one on-chain game per player and hand, so every player can bet a different amount.
+        // readyHand is the hand whose games exist; handGames maps seat ID -> that player's game for it.
+        int readyHand, settledHand, pendingCreates, pendingSettles;
+        Map<String,HandStake> handGames=Map.of();
+        Map<String,HandStake> openingGames=new LinkedHashMap<>();
+        /** Each player's bet for their next hand; a player changes it between hands. */
+        final Map<String,BigInteger> bets=new HashMap<>();
+        /** Per player: the latest hand's settlement status and transaction. */
+        final Map<String,String> seatSettlement=new HashMap<>(), seatTx=new HashMap<>();
         final Set<String> broke=new HashSet<>();
         boolean requestHand, stop;
         Economy(boolean blackjack,BigInteger stake) {this.blackjack=blackjack;this.stake=stake;}
+        BigInteger betFor(String seatId) { return bets.getOrDefault(seatId,stake); }
         boolean active() { return funding.equals("CREATING")||funding.equals("CANCELLING"); }
     }
     private static class Room {
@@ -143,6 +150,7 @@ public class RoomService {
             return game==null ? "LOBBY" : state().finished() ? "FINISHED" : "IN_PROGRESS";
         }
     }
+    private record HandStake(String gameId,String accountId,BigInteger bet) {}
     public record RoomSeat(String playerId,String displayName,String avatar,boolean npc,boolean ready,boolean connected,String presence,String accountId) {}
     public record RoomPayout(String playerId,String accountId,String amount) {}
     public record RoomEconomy(String mode,String buyIn,String casinoId,String gameId,String funding,long fundingDeadlineEpochMillis,
@@ -354,10 +362,14 @@ public class RoomService {
         var e=room.economy;
         e.funding="CREATING";e.settlement="NOT_STARTED";e.txHash=null;e.message=null;e.payouts=List.of();
         e.paid.clear();e.cancelSent=false;e.readyHand=0;e.settledHand=0;e.broke.clear();e.stop=false;e.requestHand=false;
+        e.handGames=Map.of();e.openingGames=new LinkedHashMap<>();e.pendingCreates=0;e.pendingSettles=0;
+        e.seatSettlement.clear();e.seatTx.clear();
         room.lastActivity=System.currentTimeMillis();
         if(e.blackjack) {
-            room.blackjack=null; // A new shoe starts after the first hand is funded.
-            openHand(room,1);
+            // The shoe starts at once. Hand 1 is like every later hand: each player sets a bet at the table and
+            // asks for the deal; only then are the on-chain games opened (see blackjackReady).
+            e.funding="FUNDED";e.requestHand=true;
+            beginMatch(room);
         } else {
             e.gameId="ld-"+UUID.randomUUID();e.inFlight=true;
             e.pot=e.stake.multiply(BigInteger.valueOf(room.seats.size()));
@@ -406,49 +418,60 @@ public class RoomService {
         }
         publish(room);
     }
-    /** Blackjack: open the on-chain game for one hand. Players who ran out of casino TRASH sit out. */
+    /**
+     * Blackjack: open one on-chain game per player for the coming hand, each with that player's bet and a
+     * 1.5x house stake. Called only when the hand is about to be dealt, so nobody is staked before asking.
+     * Players who ran out of casino TRASH sit out.
+     */
     private void openHand(Room room,int hand) {
         var e=room.economy;
         var players=room.seats.stream().filter(s->!s.npc&&!s.abandoned&&!e.broke.contains(s.id)).toList();
         e.requestHand=false;
         if(players.isEmpty()) {e.stop=true;return;}
-        String gameId="bj-"+UUID.randomUUID(), roomId=room.id;
-        Map<String,String> accounts=new LinkedHashMap<>();
-        players.forEach(s->accounts.put(s.id,s.accountId));
-        BigInteger houseStake=e.stake.multiply(BigInteger.valueOf(3L*players.size())).divide(BigInteger.TWO); // Covers 3:2 wins.
-        e.inFlight=true;
-        chain.createGame(gameId,e.stake,List.copyOf(accounts.values()),houseStake,CHAIN_GAME_TIMEOUT_SECONDS)
-            .whenComplete((result,error)->onHandCreated(roomId,gameId,hand,accounts,result,error));
+        String roomId=room.id;
+        e.openingGames=new LinkedHashMap<>();e.pendingCreates=players.size();e.inFlight=true;
+        for(Seat player:players) {
+            String gameId="bj-"+UUID.randomUUID(), seatId=player.id, account=player.accountId;
+            BigInteger bet=e.betFor(seatId);
+            BigInteger houseStake=bet.multiply(BigInteger.valueOf(3)).divide(BigInteger.TWO); // Covers a 3:2 blackjack.
+            log.info("paid_hand_open room={} game={} hand={} player={} bet={}",room.code,gameId,hand,account,bet);
+            chain.createGame(gameId,bet,List.of(account),houseStake,CHAIN_GAME_TIMEOUT_SECONDS)
+                .whenComplete((result,error)->onHandCreated(roomId,gameId,hand,seatId,account,bet,result,error));
+        }
     }
-    synchronized void onHandCreated(String roomId,String gameId,int hand,Map<String,String> accounts,
+    synchronized void onHandCreated(String roomId,String gameId,int hand,String seatId,String account,BigInteger bet,
         ChainGateway.TxResult result,Throwable error) {
         boolean ok=error==null&&result!=null&&result.ok();
         Room room=rooms.get(roomId);
         if(room==null||room.economy==null) {if(ok) chain.cancelGame(gameId);return;}
         var e=room.economy;
-        e.inFlight=false;
+        e.pendingCreates--;
         if(ok) {
             e.open.add(gameId);e.gameId=gameId;
-            if(e.funding.equals("CANCELLING")) return; // tick() cancels it.
-            e.readyHand=hand;e.handSeats=accounts;
-            e.paid.clear();e.paid.addAll(accounts.keySet());
-            if(room.blackjack==null) {e.funding="FUNDED";beginMatch(room);}
-            else publish(room);
+            e.openingGames.put(seatId,new HandStake(gameId,account,bet));
+        } else {
+            String reason=chainError(result,error);
+            Seat seat=room.seats.stream().filter(s->s.id.equals(seatId)).findFirst().orElse(null);
+            String name=seat==null?"A player":seat.name;
+            e.broke.add(seatId); // Sits out the rest of this shoe either way; their next shoe starts clean.
+            e.message=brokeSeat(room,reason)!=null
+                ? name+" does not have "+trash(bet)+" TRASH in the casino and sits out. Deposit more to play the next shoe."
+                : "Could not open "+name+"’s hand on NEAR Testnet: "+reason;
+            if(room.blackjack!=null) try {room.blackjack.leave(seatId);} catch(IllegalArgumentException alreadyGone) {}
+        }
+        if(e.pendingCreates>0) return;
+        e.inFlight=false;
+        if(e.funding.equals("CANCELLING")) return; // tick() cancels every game that was opened.
+        if(e.openingGames.isEmpty()) { // Nobody could pay: end the shoe, or fail the start.
+            e.stop=true;
+            if(room.blackjack==null) {e.funding="FAILED";room.seats.forEach(s->s.ready=s.npc);}
+            publish(room);
             return;
         }
-        String reason=chainError(result,error);
-        Seat broke=brokeSeat(room,reason);
-        if(broke!=null) {
-            e.broke.add(broke.id);
-            e.message=broke.name+" ran out of casino TRASH and sits out. Deposit more to play the next shoe.";
-            if(room.blackjack!=null) room.blackjack.leave(broke.id);
-            e.requestHand=true; // Retry without them.
-        } else {
-            e.message="Could not open the next hand on NEAR Testnet: "+reason;
-            e.stop=true;
-        }
-        if(room.blackjack==null&&e.stop) {e.funding="FAILED";room.seats.forEach(s->s.ready=s.npc);}
-        publish(room);
+        e.readyHand=hand;e.handGames=e.openingGames;e.openingGames=new LinkedHashMap<>();
+        e.paid.clear();e.paid.addAll(e.handGames.keySet());
+        if(room.blackjack==null) {e.funding="FUNDED";beginMatch(room);}
+        else publish(room);
     }
     /** Blackjack: whether the next hand may be dealt; requests its on-chain game when needed. */
     private boolean blackjackReady(Room room) {
@@ -468,53 +491,59 @@ public class RoomService {
         var e=room.economy;
         if(e==null||!e.blackjack||state.handNumber()==0||!state.handOver()||e.settledHand>=state.handNumber()) return;
         e.settledHand=state.handNumber();
-        String gameId=e.gameId, roomId=room.id;
-        if(e.open.remove(gameId)) {
-            Map<String,BlackjackGame.Hand> hands=new HashMap<>();
-            state.players().forEach(h->hands.put(h.playerId(),h));
-            List<RoomPayout> view=new ArrayList<>();List<ChainGateway.Payout> payouts=new ArrayList<>();
-            e.handSeats.forEach((playerId,account)->{
-                var hand=hands.get(playerId);
-                var outcome=hand==null||hand.outcome()==null?BlackjackGame.Outcome.PUSH:hand.outcome(); // Not dealt: bet back.
-                BigInteger amount=switch(outcome) {
-                    case WIN -> e.stake.multiply(BigInteger.TWO);
-                    case BLACKJACK -> e.stake.multiply(BigInteger.valueOf(5)).divide(BigInteger.TWO);
-                    case PUSH -> e.stake;
-                    case LOSE -> BigInteger.ZERO;
-                };
-                view.add(new RoomPayout(playerId,account,amount.toString()));
-                if(amount.signum()>0) payouts.add(new ChainGateway.Payout(account,amount));
-            });
-            e.payouts=view;e.settlement="PENDING";e.txHash=null;
-            log.info("paid_hand_settle room={} game={} hand={} payouts={}",room.code,gameId,state.handNumber(),view);
-            chain.settleGame(gameId,payouts).whenComplete((result,error)->onHandSettled(roomId,gameId,result,error));
-        }
-        if(!state.shoeOver()&&!e.inFlight) openHand(room,state.handNumber()+1);
-        else if(!state.shoeOver()) e.requestHand=true;
+        String roomId=room.id;
+        Map<String,BlackjackGame.Hand> hands=new HashMap<>();
+        state.players().forEach(h->hands.put(h.playerId(),h));
+        List<RoomPayout> view=new ArrayList<>();
+        var games=e.handGames;e.handGames=Map.of();
+        games.forEach((playerId,game)->{
+            if(!e.open.remove(game.gameId())) return;
+            var hand=hands.get(playerId);
+            var outcome=hand==null||hand.outcome()==null?BlackjackGame.Outcome.PUSH:hand.outcome(); // Not dealt: bet back.
+            BigInteger amount=switch(outcome) {
+                case WIN -> game.bet().multiply(BigInteger.TWO);
+                case BLACKJACK -> game.bet().multiply(BigInteger.valueOf(5)).divide(BigInteger.TWO);
+                case PUSH -> game.bet();
+                case LOSE -> BigInteger.ZERO;
+            };
+            view.add(new RoomPayout(playerId,game.accountId(),amount.toString()));
+            List<ChainGateway.Payout> payouts=amount.signum()>0?List.of(new ChainGateway.Payout(game.accountId(),amount)):List.of();
+            e.pendingSettles++;e.seatSettlement.put(playerId,"PENDING");e.seatTx.remove(playerId);
+            log.info("paid_hand_settle room={} game={} hand={} player={} payout={}",room.code,game.gameId(),state.handNumber(),game.accountId(),amount);
+            chain.settleGame(game.gameId(),payouts).whenComplete((result,error)->onHandSettled(roomId,game.gameId(),playerId,result,error));
+        });
+        if(!view.isEmpty()) {e.payouts=view;e.settlement="PENDING";e.txHash=null;}
+        // The next hand's games are opened only when it is about to be dealt (see blackjackReady).
+        if(!state.shoeOver()) e.requestHand=true;
     }
-    synchronized void onHandSettled(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
+    synchronized void onHandSettled(String roomId,String gameId,String playerId,ChainGateway.TxResult result,Throwable error) {
         Room room=rooms.get(roomId);
         if(room==null||room.economy==null) return;
         var e=room.economy;
-        if(error==null&&result!=null&&result.ok()) {e.settlement="CONFIRMED";e.txHash=result.txHash();}
+        e.pendingSettles--;
+        boolean ok=error==null&&result!=null&&result.ok();
+        e.seatSettlement.put(playerId,ok?"CONFIRMED":"FAILED");
+        if(result!=null&&result.txHash()!=null) e.seatTx.put(playerId,result.txHash());
+        if(ok) e.txHash=result.txHash();
         else {
-            e.settlement="FAILED";e.txHash=result!=null?result.txHash():null;
+            e.settlement="FAILED";
             e.message="A hand could not be paid out. After the on-chain deadline any player can call claim_refund.";
         }
+        if(e.pendingSettles==0&&!e.settlement.equals("FAILED")) e.settlement="CONFIRMED";
         publish(room);
     }
     synchronized void onGameCancelled(String roomId,String gameId,ChainGateway.TxResult result,Throwable error) {
         Room room=rooms.get(roomId);
-        if(room==null||room.economy==null||!gameId.equals(room.economy.gameId)) return;
+        if(room==null||room.economy==null||!room.economy.open.contains(gameId)) return;
         var e=room.economy;
-        e.inFlight=false;
-        if(error==null&&result!=null&&result.ok()) {
-            e.open.remove(gameId);
-            e.funding="CANCELLED";
-        } else {
+        e.open.remove(gameId); // Cancelled, or left to claim_refund after the deadline.
+        if(!(error==null&&result!=null&&result.ok())&&!e.funding.equals("FAILED")) {
             e.funding="FAILED";
             e.message=(e.message==null?"":e.message+" ")+"Cancelling failed; after the on-chain deadline any player can call claim_refund.";
         }
+        if(!e.open.isEmpty()) return; // Blackjack: one game per player; wait for the rest.
+        e.inFlight=false;
+        if(!e.funding.equals("FAILED")) e.funding="CANCELLED";
         room.seats.forEach(s->s.ready=s.npc);
         publish(room);
     }
@@ -617,21 +646,32 @@ public class RoomService {
      * idle player cannot stall the others; a lone player is never dealt (and never staked) without asking.
      */
     private boolean nextHandDue(Room room,long now) {
-        if(nextHandMillis<=0||room.blackjack.publicState().handNumber()==0) return now>=room.resumeAt;
+        if(!waitsForPlayers(room)) return now>=room.resumeAt;
         var humans=waitingHumans(room);
         return room.nextHandReady.containsAll(humans)||(humans.size()>1&&now>=room.resumeAt);
     }
     /** When the next hand is dealt at the latest; 0 while it waits for the players with no fallback. */
     private long nextHandAt(Room room) {
-        if(nextHandMillis<=0||room.blackjack.publicState().handNumber()==0) return room.resumeAt;
+        if(!waitsForPlayers(room)) return room.resumeAt;
         return waitingHumans(room).size()>1?room.resumeAt:0;
+    }
+    /** Later hands wait for the players; so does the first hand of a paid shoe, where everyone picks a bet first. */
+    private boolean waitsForPlayers(Room room) {
+        return nextHandMillis>0&&(room.blackjack.publicState().handNumber()>0||room.economy!=null);
     }
     private void nextHandRequest(Peer peer,JsonNode payload) {
         Room room=room(peer);
         require(room.blackjack!=null&&room.matchId.equals(payload.path("matchId").asText()),"STALE_STATE","Wrong match.");
         var state=room.blackjack.publicState();
-        require(state.handOver()&&!state.shoeOver()&&state.handNumber()>0,"ILLEGAL_ACTION","No finished hand to continue from.");
+        require(state.handOver()&&!state.shoeOver()&&(state.handNumber()>0||room.economy!=null),"ILLEGAL_ACTION","No hand to ask for.");
         require(payload.path("hand").asInt()==state.handNumber(),"STALE_STATE","That hand is no longer the latest.");
+        if(payload.has("betTrash")) { // Paid Blackjack: the bet for the coming hand, fixed once asked.
+            require(room.economy!=null&&room.economy.blackjack,"ILLEGAL_ACTION","Bets apply to paid Blackjack only.");
+            int bet=payload.path("betTrash").asInt();
+            require(bet>=1&&bet<=MAX_BLACKJACK_BET_TRASH,"INVALID_MESSAGE","Bet 1–"+MAX_BLACKJACK_BET_TRASH+" TRASH per hand.");
+            if(!room.nextHandReady.contains(peer.playerId)&&!room.economy.inFlight)
+                room.economy.bets.put(peer.playerId,ChainGateway.ONE_TRASH.multiply(BigInteger.valueOf(bet)));
+        }
         room.lastActivity=System.currentTimeMillis();
         if(room.nextHandReady.add(peer.playerId)) publish(room); // The tick deals once everyone has asked.
     }
@@ -641,7 +681,7 @@ public class RoomService {
         if(state.shoeOver()) {room.deadline=0;room.resumeAt=0;room.seats.forEach(s->s.ready=s.npc);}
         else if(state.handOver()) { // Show the result first; the next deal waits for the players (see nextHandDue).
             room.deadline=0;room.nextHandReady.clear();
-            room.resumeAt=System.currentTimeMillis()+(nextHandMillis>0&&state.handNumber()>0?nextHandMillis:revealMillis);
+            room.resumeAt=System.currentTimeMillis()+(waitsForPlayers(room)?nextHandMillis:revealMillis);
         }
         else scheduleTurn(room);
     }
@@ -737,8 +777,11 @@ public class RoomService {
         RoomEconomy economy=null;
         if(room.economy!=null) {
             var e=room.economy;
-            economy=new RoomEconomy("PAID",e.stake.toString(),chain.casinoId(),e.gameId,e.funding,0,
-                List.copyOf(e.paid),e.settlement,e.txHash,e.payouts,e.message);
+            // Blackjack: each player sees their own bet and the payout of their own game.
+            String settlement=e.blackjack?e.seatSettlement.getOrDefault(recipient.id,e.settlement):e.settlement;
+            String txHash=e.blackjack?e.seatTx.getOrDefault(recipient.id,null):e.txHash;
+            economy=new RoomEconomy("PAID",(e.blackjack?e.betFor(recipient.id):e.stake).toString(),chain.casinoId(),e.gameId,e.funding,0,
+                List.copyOf(e.paid),settlement,txHash,e.payouts,e.message);
         }
         send(recipient.socket,"ROOM_STATE",null,new RoomState(room.id,room.code,room.gameType,room.phase(),room.hostId,recipient.id,seats,
             brain.mode(),economy));
@@ -819,14 +862,16 @@ public class RoomService {
     private void fundingTick(Room room,long now) {
         var e=room.economy;
         if(e.inFlight||!e.funding.equals("CANCELLING")||e.cancelSent) return;
-        String roomId=room.id, gameId=e.gameId;
-        if(gameId==null||!e.open.contains(gameId)) { // Never created on-chain: nothing to refund.
+        String roomId=room.id;
+        if(e.open.isEmpty()) { // Never created on-chain: nothing to refund.
             e.funding="CANCELLED";room.seats.forEach(s->s.ready=s.npc);publish(room);
             return;
         }
         e.cancelSent=true;e.inFlight=true;
-        log.info("paid_room_cancel room={} game={} reason={}",room.code,gameId,e.message);
-        chain.cancelGame(gameId).whenComplete((result,error)->onGameCancelled(roomId,gameId,result,error));
+        for(String gameId:List.copyOf(e.open)) {
+            log.info("paid_room_cancel room={} game={} reason={}",room.code,gameId,e.message);
+            chain.cancelGame(gameId).whenComplete((result,error)->onGameCancelled(roomId,gameId,result,error));
+        }
     }
     /**
      * Asks the agent's brain for a Liar's Dice move without holding the room lock while it thinks. The reply is

@@ -358,7 +358,7 @@ export interface ROOM_CREATE {
     paid?: boolean;
     sessionToken?: SessionToken;
     /**
-     * Paid Blackjack only: TRASH bet per hand (whole TRASH). Defaults to 1.
+     * Paid Blackjack only: starting TRASH bet per hand (whole TRASH). Each player can change it before every hand. Defaults to 1.
      */
     betTrash?: number;
   };
@@ -606,9 +606,13 @@ export interface BLACKJACK_NEXT_HAND {
   payload: {
     matchId: Identifier;
     /**
-     * The finished hand shown in RESULT; a vote for an older hand is ignored.
+     * The hand just shown (RESULT), or 0 before the first hand of a paid shoe; a request for an older hand is rejected.
      */
     hand: number;
+    /**
+     * Paid Blackjack only: whole TRASH to bet on the coming hand. Omitted keeps the previous bet.
+     */
+    betTrash?: number;
   };
 }
 export interface MATCH_END {

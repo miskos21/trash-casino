@@ -869,3 +869,11 @@ button:disabled { opacity: 0.45; }
 .heading-actions small { color: #b2b5bb; font-size: 12px; letter-spacing: 0; }
 /* A result card with a next step (Next hand, Play again) sits above the chat, which covers it on narrow screens. */
 .match-heading:has(.heading-actions) { z-index: 13; }
+/* Paid Blackjack: the bet for the next hand, set in the result card. */
+.bet-picker { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; width: 100%; color: #c9cbcf; font-size: 13px; }
+.heading-actions .bet-picker button { min-width: 36px; min-height: 34px; padding: 0 10px; }
+.bet-picker input { width: 52px; min-height: 34px; padding: 0 6px; border: 1px solid #858a9370; border-radius: 8px; background: #121315;
+  color: #f7e7be; font: inherit; font-size: 16px; font-weight: 600; text-align: center; }
+.heading-actions .bet-preset { min-width: 38px; border: 1px solid #858a9350; border-radius: 8px; background: transparent; color: #d6d7da; font: inherit; cursor: pointer; }
+.heading-actions .bet-preset.selected { border-color: #e0bb70; color: #f5ddb1; background: #e0bb7020; }
+.match-heading .heading-actions .room-error { width: 100%; margin: 0; }

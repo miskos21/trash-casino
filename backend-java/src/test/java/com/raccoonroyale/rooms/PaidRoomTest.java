@@ -33,6 +33,7 @@ class PaidRoomTest {
         final Map<String, BigInteger> balances = new HashMap<>();
         final Map<String, List<String>> games = new LinkedHashMap<>();
         final List<BigInteger> houseStakes = new ArrayList<>();
+        final List<BigInteger> buyIns = new ArrayList<>();
         final List<List<Payout>> settlements = new ArrayList<>();
         boolean settleOk = true;
         public boolean enabled() { return true; }
@@ -55,6 +56,7 @@ class PaidRoomTest {
             humans.forEach(p -> balances.merge(p, buyIn.negate(), BigInteger::add));
             games.put(gameId, players);
             houseStakes.add(houseStake);
+            buyIns.add(buyIn);
             return ok();
         }
         public CompletableFuture<Optional<ChainGame>> game(String gameId) { return CompletableFuture.completedFuture(Optional.empty()); }
@@ -215,6 +217,7 @@ class PaidRoomTest {
         alice.send("ROOM_CREATE", create("BLACKJACK", session("alice.testnet"), 1, 2));
         assertEquals(TRASH.multiply(BigInteger.TWO).toString(), alice.economy().path("buyIn").asText(), "bet per hand");
         alice.ready(); alice.startMatch();
+        rooms.tick(); // Tests deal without waiting: hand 1's games open on the first tick.
 
         // Hand 1 is funded before any card is dealt: Alice's bet and a 1.5x house stake. Don is not on-chain.
         assertEquals(List.of("alice.testnet"), chain.games.values().iterator().next());
@@ -243,19 +246,58 @@ class PaidRoomTest {
         var bob = new Player();
         bob.send("ROOM_JOIN", Map.of("displayName", "Bob", "avatar", "FOX", "roomCode", alice.code(), "sessionToken", session("bob.testnet")));
         alice.ready(); bob.ready(); alice.startMatch();
-        assertEquals(List.of("alice.testnet", "bob.testnet"), chain.games.values().iterator().next());
+        rooms.tick();
+        // One on-chain game per player and hand, so each can bet their own amount.
+        assertEquals(List.of(List.of("alice.testnet"), List.of("bob.testnet")), new ArrayList<>(chain.games.values()).subList(0, 2));
 
         // Bob can only cover hand 1 unless he wins it; play until he runs out or the shoe ends.
-        for (int i = 0; i < 5_000 && !"FINISHED".equals(alice.phase()) && !alice.economy().path("message").asText().contains("Bob ran out"); i++) {
+        for (int i = 0; i < 5_000 && !"FINISHED".equals(alice.phase()) && !alice.economy().path("message").asText().contains("Bob does not have"); i++) {
             rooms.tick();
         }
-        if (alice.economy().path("message").asText().contains("Bob ran out")) {
+        if (alice.economy().path("message").asText().contains("Bob does not have")) {
             playHands(alice, chain.settlements.size() + 2);
             var lastGame = new ArrayList<>(chain.games.values()).getLast();
             assertEquals(List.of("alice.testnet"), lastGame, "later hands are Alice only");
             assertTrue(alice.last("BLACKJACK_STATE").path("players").size() == 1, "Bob is dealt out");
         }
         assertTrue(balance("bob.testnet").signum() >= 0);
+    }
+
+    @Test void blackjackPlayerChangesTheBetBetweenHands() throws Exception {
+        chain.balances.put("alice.testnet", TRASH.multiply(BigInteger.valueOf(100)));
+        var alice = new Player();
+        alice.send("ROOM_CREATE", create("BLACKJACK", session("alice.testnet"), 0, 2));
+        alice.ready(); alice.startMatch();
+        rooms.tick(); // Tests deal without waiting: hand 1's games open on the first tick.
+        assertEquals(List.of(TRASH.multiply(BigInteger.TWO)), chain.buyIns, "hand 1 uses the starting bet");
+        for (int i = 0; i < 200 && chain.settlements.isEmpty(); i++) rooms.tick();
+        var result = alice.last("BLACKJACK_STATE");
+        assertEquals("RESULT", result.path("handPhase").asText());
+        assertEquals(1, chain.buyIns.size(), "the next hand is not staked while the result is shown");
+
+        alice.send("BLACKJACK_NEXT_HAND", Map.of("matchId", result.path("matchId").asText(), "hand", 1, "betTrash", 7));
+        assertEquals(TRASH.multiply(BigInteger.valueOf(7)).toString(), alice.economy().path("buyIn").asText(), "the room shows her new bet");
+        for (int i = 0; i < 20 && chain.buyIns.size() < 2; i++) rooms.tick();
+        assertEquals(TRASH.multiply(BigInteger.valueOf(7)), chain.buyIns.get(1), "hand 2 takes the new bet");
+        assertEquals(TRASH.multiply(BigInteger.valueOf(7)).multiply(BigInteger.valueOf(3)).divide(BigInteger.TWO), chain.houseStakes.get(1));
+
+        for (int i = 0; i < 200 && chain.settlements.size() < 2; i++) rooms.tick();
+        var allowed = List.of(BigInteger.ZERO, TRASH.multiply(BigInteger.valueOf(7)), TRASH.multiply(BigInteger.valueOf(14)),
+            TRASH.multiply(BigInteger.valueOf(35)).divide(BigInteger.TWO));
+        var paid = chain.settlements.get(1).stream().map(ChainGateway.Payout::amount).reduce(BigInteger.ZERO, BigInteger::add);
+        assertTrue(allowed.contains(paid), "hand 2 pays by the 7 TRASH bet, got " + paid);
+    }
+
+    @Test void blackjackBetOutsideTheLimitIsRejected() throws Exception {
+        chain.balances.put("alice.testnet", TRASH.multiply(BigInteger.valueOf(100)));
+        var alice = new Player();
+        alice.send("ROOM_CREATE", create("BLACKJACK", session("alice.testnet"), 0, 2));
+        alice.ready(); alice.startMatch();
+        rooms.tick(); // Tests deal without waiting: hand 1's games open on the first tick.
+        for (int i = 0; i < 200 && chain.settlements.isEmpty(); i++) rooms.tick();
+        String matchId = alice.last("BLACKJACK_STATE").path("matchId").asText();
+        assertThrows(IllegalArgumentException.class,
+            () -> alice.send("BLACKJACK_NEXT_HAND", Map.of("matchId", matchId, "hand", 1, "betTrash", 51)), "the schema rejects 51");
     }
 
     @Test void blackjackBetMustBeAtLeastOneTrash() throws Exception {
@@ -269,6 +311,7 @@ class PaidRoomTest {
         alice.send("ROOM_CREATE", Map.of("displayName", "Alice", "avatar", "CAT", "game", "LIARS_DICE", "agents", 1));
         assertTrue(alice.last("ROOM_STATE").path("economy").isNull());
         alice.ready(); alice.startMatch();
+        rooms.tick(); // Tests deal without waiting: hand 1's games open on the first tick.
         for (int i = 0; i < 2_000 && !alice.got("GAME_RESULT"); i++) rooms.tick();
         assertEquals("NOT_STARTED", alice.last("GAME_RESULT").path("settlement").asText());
         assertTrue(chain.calls.isEmpty());

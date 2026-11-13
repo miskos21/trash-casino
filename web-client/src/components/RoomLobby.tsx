@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Avatar, GameType } from '@raccoon-royale/shared-schemas/types';
 import type { GameConnection } from '../services/useGameConnection';
 import type { Wallet } from '../wallet/useWallet';
+import { rememberedBet } from '../game/blackjackBet';
 import { formatTrash } from '../wallet/trash';
 import { usePlayerStore } from '../stores/playerStore';
 import { DieFace } from './DieFace';
@@ -37,15 +38,11 @@ export function RoomLobby({ connection: c, wallet, avatar, onStarted, onOpenWall
   const [game, setGame] = useState<GameType>('BLACKJACK');
   const [agents, setAgents] = useState(1);
   const [stake, setStake] = useState<'free' | 'paid'>('free');
-  const [bet, setBet] = useState('1');
   const room = c.room;
   const disabled = c.socket !== 'online' || c.pending;
   const paid = stake === 'paid';
   const sessionToken = wallet.session?.sessionToken;
   const buyIn = wallet.config ? formatTrash(wallet.config.buyIn) : '10';
-  const betTrash = Number.parseInt(bet, 10);
-  const betValid = /^\d{1,2}$/.test(bet) && betTrash >= 1 && betTrash <= 50;
-  const stakeLabel = game === 'BLACKJACK' ? `${betValid ? betTrash : '?'} TRASH per hand` : `${buyIn} TRASH`;
   const shownGame = room ? room.game : game;
   const shownAgents = room ? room.participants.filter((p) => p.npc).length : agents;
   const me = room?.participants.find((p) => p.playerId === room.youId);
@@ -68,8 +65,6 @@ export function RoomLobby({ connection: c, wallet, avatar, onStarted, onOpenWall
       <button aria-pressed={stake === 'paid'} className={stake === 'paid' ? 'selected' : ''} onClick={() => setStake('paid')}>
         {game === 'BLACKJACK' ? 'Bet TRASH' : `${buyIn} TRASH buy-in`}</button>
     </div>}
-    {!room && paid && game === 'BLACKJACK' && <label>Bet per hand (1–50 TRASH)<input aria-label="Bet per hand in TRASH" inputMode="numeric"
-      value={bet} maxLength={2} onChange={(e) => setBet(e.target.value.replace(/[^0-9]/g, ''))} /></label>}
 
     <h3 className="play-step">Agents at the table</h3>
     <div className="game-picker agent-picker" role="group" aria-label="Agents at the table">
@@ -80,7 +75,7 @@ export function RoomLobby({ connection: c, wallet, avatar, onStarted, onOpenWall
     </div>
     {!room && <p className="free-play-note">{!paid ? 'Free play: no buy-in, no token rewards.'
       : game === 'BLACKJACK'
-        ? `Each hand takes ${stakeLabel} from your casino balance, no wallet popups. Win pays 2×, blackjack 2.5×, push returns the bet. Agents play for show.`
+        ? `You set your bet (1–50 TRASH) before every hand, at the table. It comes from your casino balance, no wallet popups. Win pays 2×, blackjack 2.5×, push returns the bet. Agents play for show.`
         : `Everyone's ${buyIn} TRASH buy-in comes from their casino balance, no wallet popups. The chip leader takes the pot. Agents play with house money.`}
       {' '}Agents (Don, Foxy) are AI players who chat and take seats from the four available.
       {game === 'LIARS_DICE' && agents === 0 ? ' Liar’s Dice needs a second player to start.' : ''}</p>}
@@ -92,10 +87,11 @@ export function RoomLobby({ connection: c, wallet, avatar, onStarted, onOpenWall
 
     <h3 className="play-step">Room</h3>
     {!room ? <>
-      <button className="resume-button create-room-button" disabled={disabled || !name.trim() || (paid && (!sessionToken || (game === 'BLACKJACK' && !betValid)))} onClick={() => c.send({
+      <button className="resume-button create-room-button" disabled={disabled || !name.trim() || (paid && !sessionToken)} onClick={() => c.send({
         protocolVersion: 1, type: 'ROOM_CREATE', requestId: null, payload: {
           displayName: name.trim(), avatar, game, agents, ...(paid ? { paid: true } : {}),
-          ...(paid && game === 'BLACKJACK' ? { betTrash } : {}), ...(sessionToken ? { sessionToken } : {}),
+          // The first hand starts at the bet this browser used last; it can be changed after every hand.
+          ...(paid && game === 'BLACKJACK' ? { betTrash: rememberedBet() } : {}), ...(sessionToken ? { sessionToken } : {}),
         },
       })}>Create room</button>
       <form className="join-row" onSubmit={(event) => {

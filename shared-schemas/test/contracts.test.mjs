@@ -86,7 +86,8 @@ test('blackjack moves carry no cards and the dealer hole card has no public fiel
   assert.ok(validate('ClientMessage', envelope('BLACKJACK_HIT', move)));
   assert.ok(validate('ClientMessage', envelope('BLACKJACK_STAND', move)));
   assert.ok(validate('ClientMessage', envelope('BLACKJACK_NEXT_HAND', { matchId: 'm', hand: 1 })));
-  assert.equal(validate('ClientMessage', envelope('BLACKJACK_NEXT_HAND', { matchId: 'm', hand: 0 })), false);
+  assert.ok(validate('ClientMessage', envelope('BLACKJACK_NEXT_HAND', { matchId: 'm', hand: 0, betTrash: 5 })));
+  assert.equal(validate('ClientMessage', envelope('BLACKJACK_NEXT_HAND', { matchId: 'm', hand: -1 })), false);
   assert.equal(validate('ClientMessage', envelope('BLACKJACK_NEXT_HAND', { matchId: 'm', hand: 1, bet: '5' })), false);
   assert.equal(validate('ClientMessage', envelope('BLACKJACK_HIT', { ...move, card: { rank: 'A', suit: 'S' } })), false);
   assert.equal(validate('ClientMessage', envelope('BLACKJACK_STATE', {})), false);
